@@ -1,0 +1,4 @@
+.basic {
+	background-image: url(images/404.png);
+	background-image: -webkit-image-set(url("images/404.png") 1x, url(images/404@2x.png) 2x);
+}

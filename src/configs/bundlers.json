@@ -1,0 +1,6 @@
+{
+	".js": "../bundlers/js",
+	".css": "../bundlers/css",
+	".html": "../bundlers/html",
+	".htm": ".html"
+}

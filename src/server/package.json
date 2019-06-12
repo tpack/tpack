@@ -1,0 +1,16 @@
+{
+  "name": "h2server",
+  "version": "0.0.1",
+  "repository": "https://github.com/tpack/tpack",
+  "description": "Command line HTTP2 server tool for serving up local files, support https & http2",
+  "license": "SEE LICENSE IN LICENSE",
+  "author": "xuld <xuld@vip.qq.com>",
+  "engines": {
+    "node": ">=10.12",
+    "npm": ">=6"
+  },
+  "main": "./webServer.js",
+  "bin": {
+    "h2server": "./bin/h2server.js"
+  }
+}

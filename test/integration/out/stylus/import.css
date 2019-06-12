@@ -1,0 +1,11 @@
+.common {
+  background: url("import/common/favicon.ico");
+}
+.import-variable {
+  color: #f00;
+}
+@import url("import/import-css.css");
+.import {
+  color: #f00;
+}
+/*# sourceMappingURL=import.css.map */

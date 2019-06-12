@@ -1,0 +1,15 @@
+{
+  "name": "tpack-integration-test",
+  "version": "1.0.0",
+  "private": true,
+  "dependencies": {
+    "clean-css": "^4.2.1",
+    "coffeescript": "^2.4.1",
+    "highlight.js": "^9.15.8",
+    "html-minifier": "^4.0.0",
+    "less": "^3.9.0",
+    "marked": "^0.6.2",
+    "stylus": "^0.54.5",
+    "uglify-js": "^3.6.0"
+  }
+}
