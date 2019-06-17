@@ -330,7 +330,8 @@ export class WebServer extends HTTPServer {
 					const indexPath = join(path, index)
 					const fileStat = await this.fs.getStat(indexPath)
 					if (fileStat.isFile()) {
-						this.writeFile(request, response, indexPath, fileStat.mtimeMs)
+						request.path = join(request.path, index)
+						this.processRequest(request, response)
 						return
 					}
 				}
