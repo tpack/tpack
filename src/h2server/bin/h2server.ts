@@ -1,51 +1,105 @@
 #!/usr/bin/env node
 import { WebServer } from '../../server/webServer'
 import { ANSIColor, color } from '../../utils/ansi'
-import { FileSystem } from '../../utils/fileSystem'
+import { HTTPRequest, HTTPResponse } from '../../utils/httpServer'
 import { parseCommandLineArguments, formatCommandLineOptions, CommandLineOption } from '../../utils/commandLine'
 
-const fs = new FileSystem()
 const commandOptions: { [option: string]: CommandLineOption } = {
+	// host
+	'--host': {
+		group: 'host',
+		argument: 'host',
+		description: 'Serve Address to use [0.0.0.0]:[auto]'
+	},
 	'--port': {
-		description: 'Port to use [auto]',
 		alias: ['-p'],
 		argument: 'port',
-		group: 'host'
+		description: 'Port to use [auto]'
 	},
 	'--address': {
-		description: 'Address to use [0.0.0.0]',
 		alias: ['-a'],
-		argument: 'address'
+		argument: 'address',
+		description: 'Address to use [0.0.0.0]'
 	},
-	'--host': {
-		description: 'Serve Address to use [0.0.0.0]:[auto]',
-		argument: 'host'
-	},
+
+	// browser
 	'--open': {
-		description: `Open browser window after starting the server\nOptionally provide a URL path to open the browser window to`,
+		group: 'browser',
 		alias: ['-o'],
 		argument: 'path',
-		group: 'test'
+		default: true,
+		description: `Open browser window after starting the server\nOptionally provide a URL path to open the browser window to`
+	},
+	'--open-url': {
+		argument: 'path',
+		default: '',
+		description: `provide a URL path to open the browser window to`
+	},
+	'--open-client': {
+		argument: 'app',
+		default: '',
+		description: `default browser`
 	},
 	'--no-dir': {
 		description: 'Do not show directory list'
 	},
-	'--root-dir': {
-		description: '',
-		argument: 'path'
+
+	// logger
+	'--utc': {
+		group: 'logger',
+		alias: ['-U'],
+		description: 'Use UTC time format in log messages'
+	},
+	'--log-ip': {
+		description: 'Enable logging of the client\'s IP address'
+	},
+	'--silent': {
+		alias: ['-s'],
+		description: 'Suppress log messages from output'
+	},
+
+	// server
+	'--cwd': {
+		group: 'server',
+		argument: 'path',
+		description: 'cwd'
 	},
 	'--root-path': {
-		description: '',
-		argument: 'path'
+		argument: 'path',
+		description: ''
 	},
 	'--index': {
 		multiple: true,
 		argument: 'fileName',
 		description: 'main file'
 	},
+	'--ssl': {
+		alias: ['-S'],
+		description: 'Enable https'
+	},
+	'--cert': {
+		alias: ['-C'],
+		argument: 'filePath',
+		default: '',
+		description: 'Path to ssl cert file (default: cert.pem).'
+	},
+	'--key': {
+		alias: ['-K'],
+		argument: 'filePath',
+		default: '',
+		description: 'Path to ssl key file (default: key.pem)'
+	},
+	'--http2': {
+		alias: ['-H2'],
+		description: 'Enable http2'
+	},
+	'--max-length': {
+		argument: 'maxAllowedContentLength',
+		description: 'max allowed content length (default: 20 * 1024 * 1024)'
+	},
 	'--help': {
-		description: 'Print this list and exit',
-		alias: ['-h', '-?']
+		alias: ['-h', '-?'],
+		description: 'Print this list and exit'
 	}
 }
 const argv = parseCommandLineArguments(commandOptions)
@@ -59,45 +113,44 @@ if (argv['--help']) {
 	process.exit()
 }
 
-const open = argv['--open']
 const port = argv['--port'] || ''
 const address = argv['--address'] || ''
 const rootServe = argv['--root-path'] || '/'
-const rootDir = argv['--root-dir'] as string
-const url = argv['--host'] as string || `${address}${port ? `:${port}` : ''}${rootServe}`
+const rootDir = argv['--cwd'] as string
+const openURL = argv['--open-url'] as string
+const open = (argv['--open'] as string | boolean)
+const url = typeof open === 'string' ? open : '' || argv['--host'] as string || `${address}${port ? `:${port}` : ''}${rootServe}`
 
-console.log(argv)
 const logger = {
-	log: (argv.silent || argv.s) ? function () {} : console.log,
-	info: (text: string) => logger.log(color(text, ANSIColor.blue)),
-	error: (text: string) => logger.log(color(text, ANSIColor.red)),
-	warn: (text: string) => logger.log(color(text, ANSIColor.yellow)),
-	success: (text: string) => logger.log(color(text, ANSIColor.green))
+	log: argv['--silent'] ? function () {} : console.log,
+	info: (text: string, ...args: any[]) => logger.log(color(text, ANSIColor.blue), ...args),
+	request: (request: HTTPRequest, response: HTTPResponse, server: WebServer) => {
+		const date = argv['--utc'] ? new Date().toUTCString() : new Date()
+		const ip = argv['--log-ip'] ? request.headers['x-forwarded-for'] || '' + request.connection.remoteAddress : ''
+		logger.info(
+			'[%s] %s "%s %s" "%s"',
+			date, ip, color(request.method, ANSIColor.cyan), color(request.url, ANSIColor.cyan),
+			request.headers['user-agent']
+		)
+	}
 }
 
 const server = new WebServer({
 	url,
-	http2: !!(url && /^https:/i.test(url)),
-	directoryList: !argv['--no-dir'],
-	open: !!open,
+	https: !!argv['--https'],
+	http2: !!argv['--http2'] || !!(url && /^https:/i.test(url)),
+	cert: argv['--cert'] as string,
+	key: argv['--key'] as string,
+	open: argv['--open-client'] as string || !!open || openURL,
+	openURL,
 	rootDir,
 	routers: [
 		{
 			match: '**',
 			async process(req, res, server) {
-				if (req.path === '/favicon.ico') return res.end()
-
-				const isFile = await fs.existsFile(server.mapPath(req.path)!)
-				if(isFile) {
-					// TODO
-				}
-				else {
-					const fileList = await fs.readDir(server.mapPath(req.path)!)
-					fileList.find()
-					server.defaultPages
-				}
-				res.end()
-			}
+				logger.request(req, res, server)
+			},
+			break: false
 		},
 		{
 			match: '*.ejs',
@@ -112,7 +165,9 @@ const server = new WebServer({
 			}
 		}
 	],
-	defaultPages: argv['--index'] as string[]
+	defaultPages: argv['--index'] as string[],
+	directoryList: !argv['--no-dir'],
+	maxAllowedContentLength: typeof argv['--max-length'] === 'string' ? parseInt(argv['--max-length'] as string, 10) : undefined
 })
 
 server.start().then(() => {
