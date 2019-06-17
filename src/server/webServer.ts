@@ -107,7 +107,7 @@ export class WebServer extends HTTPServer {
 		}) : []
 		this.mimeTypes = options.mimeTypes
 		this.directoryList = !!options.directoryList
-		this.defaultPages = options.defaultPages || (this.directoryList ? [] : ["index.html", "index.htm"])
+		this.defaultPages = options.defaultPages || (this.directoryList ? ["index.html", "index.htm"] :  [])
 
 		function getHTTPServerOptions(options: WebServerOptions) {
 			// 如果是 HTTPS 但未提供证书，使用自带证书
