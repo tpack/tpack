@@ -1,0 +1,16 @@
+[
+	{
+		"match": [
+			"*.js",
+			"!*.min.js"
+		],
+		"use": "tpack/optimizers/js"
+	},
+	{
+		"match": [
+			"*.css",
+			"!*.min.css"
+		],
+		"use": "tpack/optimizers/css"
+	}
+]

@@ -1,0 +1,224 @@
+## 文件列表
+- [x] 脚手架
+	- [x] [.gitignore](.gitignore)
+	- [x] [.editorconfig](.editorconfig)
+	- [x] [LICENSE](LICENSE)
+	- [x] TS 配置文件
+		- [x] [tsconfig.json](tsconfig.json)
+		- [x] [src/tsconfig.json](src/tsconfig.json)
+		- [x] [test/tsconfig.json](test/tsconfig.json)
+	- [x] VSCode 配置文件
+		- [x] [settings.json](.vscode/settings.json)
+		- [x] [tasks.json](.vscode/tasks.json)
+		- [x] [launch.json](.vscode/launch.json)
+	- [x] [package.json](package.json)
+- [x] 工具函数(src/utils)
+	- [x] 测试工具
+		- [x] [consoleHelper.ts](test/helpers/consoleHelper.ts)
+		- [x] [fsHelper.ts](test/helpers/fsHelper.ts)
+	- [x] 文件操作
+		- [x] [path.ts](src/utils/path.ts)
+			- [x] [path.test.ts](test/utils/path.test.ts)
+		- [x] [matcher.ts](src/utils/matcher.ts)
+			- [x] [matcher.test.ts](test/utils/matcher.test.ts)
+		- [x] [fileSystem.ts](src/utils/fileSystem.ts)
+			- [x] [fileSystem.test.ts](test/utils/fileSystem.test.ts)
+		- [x] [fileSystemSync.ts](src/utils/fileSystemSync.ts)
+			- [x] [fileSystemSync.test.ts](test/utils/fileSystemSync.test.ts)
+		- [x] [memoryFileSystem.ts](src/utils/memoryFileSystem.ts)
+			- [x] [memoryFileSystem.test.ts](test/utils/memoryFileSystem.test.ts)
+		- [x] [fileSystemWatcher.ts](src/utils/fileSystemWatcher.ts)
+			- [x] [fileSystemWatcher.test.ts](test/utils/fileSystemWatcher.test.ts)
+	- [x] 网络
+		- [x] [url.ts](src/utils/url.ts)
+			- [x] [url.test.ts](test/utils/url.test.ts)
+		- [x] [httpServer.ts](src/utils/httpServer.ts)
+			- [x] [httpServer.test.ts](test/utils/httpServer.test.ts)
+		- [x] [webSocket.ts](src/utils/webSocket.ts)
+			- [x] [webSocket.test.ts](test/utils/webSocket.test.ts)
+		- [x] [request.ts](src/utils/request.ts)
+			- [x] [request.test.ts](test/utils/request.test.ts)
+	- [x] 进程
+		- [x] [process.ts](src/utils/process.ts)
+			- [x] [process.test.ts](test/utils/process.test.ts)
+		- [x] [vm.ts](src/utils/vm.ts)
+			- [x] [vm.test.ts](test/utils/vm.test.ts)
+		- [x] [workerPool.ts](src/utils/workerPool.ts)
+			- [x] [workerPool.test.ts](test/utils/workerPool.test.ts)
+	- [x] 命令行
+		- [x] [ansi.ts](src/utils/ansi.ts)
+			- [x] [ansi.test.ts](test/utils/ansi.test.ts)
+		- [x] [commandLine.ts](src/utils/commandLine.ts)
+			- [x] [commandLine.test.ts](test/utils/commandLine.test.ts)
+		- [x] [logger.ts](src/utils/logger.ts)
+			- [x] [logger.test.ts](test/utils/logger.test.ts)
+	- [x] 编码、解析
+		- [x] [base64.ts](src/utils/base64.ts)
+			- [x] [base64.test.ts](test/utils/base64.test.ts)
+		- [x] [crypto.ts](src/utils/crypto.ts)
+			- [x] [crypto.test.ts](test/utils/crypto.test.ts)
+		- [x] [html.ts](src/utils/html.ts)
+			- [x] [data/htmlEntities.json](src/utils/data/htmlEntities.json)
+			- [x] [html.test.ts](test/utils/html.test.ts)
+		- [x] [js.ts](src/utils/js.ts)
+			- [x] [js.test.ts](test/utils/js.test.ts)
+		- [x] [css.ts](src/utils/css.ts)
+			- [x] [css.test.ts](test/utils/css.test.ts)
+		- [x] [json.ts](src/utils/json.ts)
+			- [x] [json.test.ts](test/utils/json.test.ts)
+		- [x] [esm.ts](src/utils/esm.ts)
+			- [x] [esm.test.ts](test/utils/esm.test.ts)
+	- [x] 生成代码
+		- [x] [lineColumn.ts](src/utils/lineColumn.ts)
+			- [x] [lineColumn.test.ts](test/utils/lineColumn.test.ts)
+		- [x] [sourceMap.ts](src/utils/sourceMap.ts)
+			- [x] [sourceMap.test.ts](test/utils/sourceMap.test.ts)
+		- [x] [textWriter.ts](src/utils/textWriter.ts)
+			- [x] [textWriter.test.ts](test/utils/textWriter.test.ts)
+		- [x] [textDocument.ts](src/utils/textDocument.ts)
+			- [x] [textDocument.test.ts](test/utils/textDocument.test.ts)
+	- [x] 异步
+		- [x] [asyncQueue.ts](src/utils/asyncQueue.ts)
+			- [x] [asyncQueue.test.ts](test/utils/asyncQueue.test.ts)
+		- [x] [deferred.ts](src/utils/deferred.ts)
+			- [x] [deferred.test.ts](test/utils/deferred.test.ts)
+		- [x] [eventEmitter.ts](src/utils/eventEmitter.ts)
+			- [x] [eventEmitter.test.ts](test/utils/eventEmitter.test.ts)
+	- [x] 其它
+		- [x] [misc.ts](src/utils/misc.ts)
+			- [x] [misc.test.ts](test/utils/misc.test.ts)
+	- [x] 文档
+		- [x] [package.json](src/utils/package.json)
+		- [x] [README.md](src/utils/README.md)
+- [ ] H2 服务器(src/server)
+	- [x] [data/icons/index.json](src/server/data/icons/index.json)
+	- [x] [data/mimeTypes.json](src/server/data/mimeTypes.json)
+	- [x] [icons.ts](src/server/icons.ts)
+	- [x] [mimeTypes.ts](src/server/mimeTypes.ts)
+		- [x] [mimeTypes.test.ts](test/server/mimeTypes.test.ts)
+	- [x] [webServer.ts](src/server/webServer.ts)
+		- [x] [webServer.test.ts](test/server/webServer.test.ts)
+	- [x] [liveReload.ts](src/server/liveReload.ts)
+		- [x] [liveReload.test.ts](test/server/liveReload.test.ts)
+	- [ ] [bin/h2server.ts](src/h2server/h2server)
+- [x] 构建核心(src/core)
+	- [x] 工具
+		- [x] [i18n.ts](src/core/i18n.ts)
+			- [x] [i18n.test.ts](test/core/i18n.test.ts)
+		- [x] [resolver.ts](src/core/resolver.ts)
+			- [x] [resolver.test.ts](test/core/resolver.test.ts)
+		- [x] [package.ts](src/core/package.ts)
+	- [x] 构建流程
+		- [x] [module.ts](src/core/module.ts)
+			- [x] [module.test.ts](test/core/module.test.ts)
+		- [x] [processor.ts](src/core/processor.ts)
+			- [x] [processor.test.ts](test/core/processor.test.ts)
+		- [x] [bundler.ts](src/core/bundler.ts)
+		- [ ] [cache.ts](src/core/cache.ts)
+		- [x] [options.ts](src/core/options.ts)
+		- [x] [builder.ts](src/core/builder.ts)
+			- [x] [bundlers.json](src/configs/bundlers.json)
+			- [x] [compilers.json](src/configs/compilers.json)
+			- [x] [externalModules.json](src/configs/externalModules.json)
+			- [x] [optimizers.json](src/configs/optimizers.json)
+			- [x] [tpack.config.default.js](src/configs/tpack.config.default.js)
+	- [x] 监听和服务
+		- [x] [watcher.ts](src/core/watcher.ts)
+		- [x] [server.ts](src/core/server.ts)
+	- [x] 命令行
+		- [x] [config.ts](src/core/config.ts)
+			- [x] [config.test.ts](test/core/config.test.ts)
+		- [x] [tpack.ts](src/bin/tpack.ts)
+	- [x] 集成测试
+		- [x] fixtures
+			- [x] [cleancss/basic.css](test/integration/fixtures/cleancss/basic.css)
+			- [x] [cleancss/error.css](test/integration/fixtures/cleancss/error.css)
+			- [x] [cleancss/import.css](test/integration/fixtures/cleancss/import.css)
+			- [x] [coffeescript/basic.coffee](test/integration/fixtures/coffeescript/basic.coffee)
+			- [x] [coffeescript/error.coffee](test/integration/fixtures/coffeescript/error.coffee)
+			- [x] [html-bundler/assets/main.css](test/integration/fixtures/html-bundler/assets/main.css)
+			- [x] [html-bundler/assets/main.js](test/integration/fixtures/html-bundler/assets/main.js)
+			- [x] [html-bundler/error-include.html](test/integration/fixtures/html-bundler/error-include.html)
+			- [x] [html-bundler/include.html](test/integration/fixtures/html-bundler/include.html)
+			- [x] [html-bundler/include/common.html](test/integration/fixtures/html-bundler/include/common.html)
+			- [x] [html-bundler/inline.html](test/integration/fixtures/html-bundler/inline.html)
+			- [x] [html-minifier/basic.html](test/integration/fixtures/html-minifier/basic.html)
+			- [x] [html-minifier/error.html](test/integration/fixtures/html-minifier/error.html)
+			- [x] [jjencode/basic.js](test/integration/fixtures/jjencode/basic.js)
+			- [x] [js-bundler/basic.js](test/integration/fixtures/js-bundler/basic.js)
+			- [x] [js-bundler/import/cjs-export.js](test/integration/fixtures/js-bundler/import/cjs-export.js)
+			- [x] [less/basic.less](test/integration/fixtures/less/basic.less)
+			- [x] [less/error.less](test/integration/fixtures/less/error.less)
+			- [x] [less/import.less](test/integration/fixtures/less/import.less)
+			- [x] [less/import/common/common.less](test/integration/fixtures/less/import/common/common.less)
+			- [x] [less/import/import-css.css](test/integration/fixtures/less/import/import-css.css)
+			- [x] [less/import/import-less.less](test/integration/fixtures/less/import/import-less.less)
+			- [x] [less/import/import-variable.less](test/integration/fixtures/less/import/import-variable.less)
+			- [x] [markdown/basic.md](test/integration/fixtures/markdown/basic.md)
+			- [x] [markdown/highlight.md](test/integration/fixtures/markdown/highlight.md)
+			- [x] [markdown/table.md](test/integration/fixtures/markdown/table.md)
+			- [x] [sass/basic.scss](test/integration/fixtures/sass/basic.scss)
+			- [x] [sass/error.scss](test/integration/fixtures/sass/error.scss)
+			- [x] [sass/import.scss](test/integration/fixtures/sass/import.scss)
+			- [x] [sass/import/common/common.scss](test/integration/fixtures/sass/import/common/common.scss)
+			- [x] [sass/import/import-css.css](test/integration/fixtures/sass/import/import-css.css)
+			- [x] [sass/import/import-variable.scss](test/integration/fixtures/sass/import/import-variable.scss)
+			- [x] [stylus/basic.styl](test/integration/fixtures/stylus/basic.styl)
+			- [x] [stylus/error.styl](test/integration/fixtures/stylus/error.styl)
+			- [x] [stylus/import.styl](test/integration/fixtures/stylus/import.styl)
+			- [x] [stylus/import/common/common.styl](test/integration/fixtures/stylus/import/common/common.styl)
+			- [x] [stylus/import/import-css.css](test/integration/fixtures/stylus/import/import-css.css)
+			- [x] [stylus/import/import-variable.styl](test/integration/fixtures/stylus/import/import-variable.styl)
+			- [x] [uglify-js/basic.js](test/integration/fixtures/uglify-js/basic.js)
+			- [x] [uglify-js/error.js](test/integration/fixtures/uglify-js/error.js)
+		- [x] [package.json](test/integration/package.json)
+		- [x] [tpack.config.js](test/integration/tpack.config.js)
+- [x] 常用插件
+	- [x] compilers
+		- [x] [coffeescript.ts](src/compilers/coffeescript.ts)
+		- [x] [common.ts](src/compilers/common.ts)
+		- [x] [less.ts](src/compilers/less.ts)
+		- [x] [markdown.ts](src/compilers/markdown.ts)
+		- [x] [sass.ts](src/compilers/sass.ts)
+		- [x] [stylus.ts](src/compilers/stylus.ts)
+		- [x] [typescript.ts](src/compilers/typescript.ts)
+	- [x] optimizers
+		- [x] [css.ts](src/optimizers/css.ts)
+		- [x] [html.ts](src/optimizers/html.ts)
+		- [x] [jjencode.ts](src/optimizers/jjencode.ts)
+		- [x] [js.ts](src/optimizers/js.ts)
+	- [x] plugins
+		- [x] [saveLogs.ts](src/plugins/saveLogs.ts)
+- [ ] 打包插件
+	- [ ] bundlers
+		- [ ] [common.ts](src/bundlers/common.ts)
+		- [ ] [css.ts](src/bundlers/css.ts)
+		- [ ] [html.ts](src/bundlers/html.ts)
+			- [ ] [tags.json](src/configs/tags.json)
+		- [ ] [js.ts](src/bundlers/js.ts)
+			- [ ] [builtinModules.json](src/configs/builtinModules.json)
+- [ ] 发布
+	- [ ] [tpack.config.ts](tpack.config.ts)
+- [ ] 文档
+	- [ ] README.md
+
+## BUG
+
+## TODO
+optionalPeerDependencies
+
+writeStatic  支持压缩
+
+
+
+多线程     builder    代理
+cache   实现
+
+
+空文件夹启动会，显示 了  404
+
+1.3-1.4
+改进日志功能
+
+1.4
+新增 workerPool.unref

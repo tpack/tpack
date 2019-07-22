@@ -1,0 +1,6 @@
+.basic {
+	$color: lightgray;
+	color: $color;
+	background: lighten($color, 10%);
+	background-color: lighten($color, 20%);
+}

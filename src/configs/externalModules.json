@@ -1,0 +1,26 @@
+[
+	{
+		"matchType": "image/*",
+		"minSize": 2048,
+		"outPath": "assets/images/<name><ext>"
+	},
+	{
+		"matchType": "font/*",
+		"minSize": 2048,
+		"outPath": "assets/fonts/<name><ext>"
+	},
+	{
+		"matchType": "audio/*",
+		"minSize": 2048,
+		"outPath": "assets/audios/<name><ext>"
+	},
+	{
+		"matchType": "video/*",
+		"minSize": 2048,
+		"outPath": "assets/videos/<name><ext>"
+	},
+	{
+		"minSize": 2048,
+		"outPath": "assets/resources/<name><ext>"
+	}
+]

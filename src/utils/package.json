@@ -1,0 +1,11 @@
+{
+  "name": "tutils",
+  "version": "1.5.0",
+  "repository": "https://github.com/tpack/tpack",
+  "description": "TUtils 提供了大量 Node.js 开发必备的工具组件，比如命令行、网络库、文件操作等",
+  "license": "SEE LICENSE IN LICENSE",
+  "author": "xuld <xuld@vip.qq.com>",
+  "engines": {
+    "node": ">=10.12"
+  }
+}
