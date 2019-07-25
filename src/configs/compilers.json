@@ -1,17 +1,5 @@
 [
 	{
-		"match": "*.less",
-		"use": "tpack/compilers/less"
-	},
-	{
-		"match": "*.{sass,scss}",
-		"use": "tpack/compilers/sass"
-	},
-	{
-		"match": "*.styl",
-		"use": "tpack/compilers/stylus"
-	},
-	{
 		"match": [
 			"*.{js,jsx}",
 			"!**/node_modules/**"
@@ -30,5 +18,17 @@
 			"*.coffee"
 		],
 		"use": "tpack/compilers/coffeescript"
+	},
+	{
+		"match": "*.less",
+		"use": "tpack/compilers/less"
+	},
+	{
+		"match": "*.{sass,scss}",
+		"use": "tpack/compilers/sass"
+	},
+	{
+		"match": "*.styl",
+		"use": "tpack/compilers/stylus"
 	}
 ]

@@ -1,6 +1,6 @@
 export default function (args) {
+	const isProject = require("fs").existsSync("src")
 	return {
-		rootDir: require("path").resolve(require("fs").existsSync("src") ? "src" : ""),
-		devServer: !args["--filter"] && !args["--watch"]
+		rootDir: require("path").resolve(isProject ? "src" : ".")
 	}
 }

@@ -1,5 +1,5 @@
 import Module = require("module")
-import { dirname } from "path"
+import { dirname, resolve } from "path"
 import { Context, runInNewContext, RunningScriptOptions } from "vm"
 
 /**

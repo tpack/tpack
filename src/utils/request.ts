@@ -189,7 +189,7 @@ export function request(url: string | UrlObject | URL, options?: HTTPClientReque
 }
 
 /** 表示 HTTP 客户端请求的附加选项 */
-export interface HTTPClientRequestOptions extends Pick<RequestOptions, Exclude<keyof RequestOptions, "protocol" | "hostname" | "host" | "port" | "auth" | "path">> {
+export interface HTTPClientRequestOptions extends Omit<RequestOptions, "protocol" | "hostname" | "host" | "port" | "auth" | "path"> {
 	/**
 	 * 请求的 HTTP 方法（全大写）
 	 * @default "GET"
@@ -202,7 +202,7 @@ export interface HTTPClientRequestOptions extends Pick<RequestOptions, Exclude<k
 	 * @default "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/70.0.0.0 Safari/537.36"
 	 */
 	userAgent?: string | null
-	/** 
+	/**
 	 * 请求内容的类型
 	 * - "json": 请求头的 Content-Type 会被设置为 "application/json"；请求的数据将按 JSON 格式化
 	 * - "form": 请求头的 Content-Type 会被设置为 "application/x-www-form-urlencoded"；请求的数据将按表单格式化

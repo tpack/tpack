@@ -213,7 +213,6 @@ export class ProcessorRunner {
 					try {
 						await processorRule.processor.process(module, processorRule.options, this.builder)
 					} catch (e) {
-						debugger
 						module.addError(e)
 						break
 					} finally {

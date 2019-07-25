@@ -1,13 +1,13 @@
 import { readFileSync } from "fs"
-import { Bundler as IBundler } from "../core/bundler"
 import { Builder } from "../core/builder"
-import { Module, ModuleDependency, ModuleState } from "../core/module"
-import { decodeHTML, quoteHTMLAttribute, unquoteHTMLAttribute } from "../utils/html"
+import { Bundler } from "../core/bundler"
+import { Module, ModuleDependencyType } from "../core/module"
+import { decodeHTML, encodeHTML, quoteHTMLAttribute } from "../utils/html"
 import { TextDocument } from "../utils/textDocument"
-import { Bundler, BundlerOptions } from "./common"
+import { BundlerOptions, TextBundler, TextModule } from "./common"
 
 /** 表示一个 HTML 模块打包器 */
-export default class HTMLBundler extends Bundler implements IBundler {
+export default class HTMLBundler extends TextBundler implements Bundler {
 
 	/**
 	 * 初始化新的打包器
@@ -17,8 +17,8 @@ export default class HTMLBundler extends Bundler implements IBundler {
 	constructor(options: HTMLBundlerOptions = {}, builder: Builder) {
 		super(options, builder)
 		const htmlOptions = options.html || {}
-		this.script = htmlOptions.js !== undefined ? htmlOptions.js : "jsx"
-		this.style = htmlOptions.css !== undefined ? htmlOptions.css : "css"
+		this.script = htmlOptions.js !== undefined ? htmlOptions.js : ".jsx"
+		this.style = htmlOptions.css !== undefined ? htmlOptions.css : ".css"
 		this.include = htmlOptions.include !== false
 
 		loadTags(JSON.parse(readFileSync(`${__dirname}/../configs/tags.json`, "utf-8")), this.tags)
@@ -41,16 +41,17 @@ export default class HTMLBundler extends Bundler implements IBundler {
 	}
 
 	/**
-	 * 当被子类重写时负责解析指定文件对应的模块
-	 * @param file 要解析的文件
+	 * 解析指定的文本模块
+	 * @param document 要解析的文档
+	 * @param module 要解析的模块
+	 * @param builder 当前的构建器对象
 	 */
-	protected parseModule(file: VFile, builder: Builder) {
-		file.sourceMap = false
-		const module = new HTMLModule(file, builder)
+	protected parseDocument(document: TextDocument, module: TextModule, builder: Builder) {
+		module.sourceMap = false
 		module.content.replace(/<!--(.*?)(?:-->|$)|<!\[CDATA\[.*?(?:\]\]>|$)|<%.*?(?:%>|$)|<\?.*?(?:\?>|$)|(<script\b(?:'[^']*'|"[^"]*"|[^>])*(?!\/)>)(.*?)(?:<\/script(?:'[^']*'|"[^"]*"|[^>])*>|$)|(<style\b(?:'[^']*'|"[^"]*"|[^>])*(?!\/)>)(.*?)(?:<\/style(?:'[^']*'|"[^"]*"|[^>])*>|$)|<([^\s!'">]+)\b(?:'[^']*'|"[^"]*"|[^>])*>/igs, (source: string, comment: string | undefined, openScript: string | undefined, script: string | undefined, openStyle: string | undefined, style: string | undefined, tagName: string | undefined, index: number) => {
 			// <img>, <link>, ...
 			if (tagName !== undefined) {
-				this.parseTag(source, tagName.toLowerCase(), undefined, index, file, module)
+				this.parseTag(source, tagName.toLowerCase(), undefined, index, document, module)
 				return ""
 			}
 			// <!-- -->
@@ -60,17 +61,16 @@ export default class HTMLBundler extends Bundler implements IBundler {
 			}
 			// <script>
 			if (openScript !== undefined) {
-				this.parseTag(openScript, "script", this.script ? script : undefined, index, file, module)
+				this.parseTag(openScript, "script", this.script ? script : undefined, index, document, module)
 				return ""
 			}
 			// <style>
 			if (openStyle !== undefined) {
-				this.parseTag(openStyle, "style", this.style ? style : undefined, index, file, module)
+				this.parseTag(openStyle, "style", this.style ? style : undefined, index, document, module)
 				return ""
 			}
 			return ""
 		})
-		return module
 	}
 
 	/** 获取各标签的处理方式 */
@@ -88,10 +88,10 @@ export default class HTMLBundler extends Bundler implements IBundler {
 	 * @param tagName 要解析的标签名
 	 * @param innerHTML 标签的主体，仅标签名为 `script` 或 `style` 时可用
 	 * @param index 打开标签在源文件的起始位置（从 0 开始）
-	 * @param file 当前正在解析的文件
+	 * @param document 当前正在解析的文档
 	 * @param module 当前正在解析的模块
 	 */
-	protected parseTag(openTag: string, tagName: string, innerHTML: string | undefined, index: number, file: VFile, module: Module) {
+	protected parseTag(openTag: string, tagName: string, innerHTML: string | undefined, index: number, document: TextDocument, module: TextModule) {
 		// 判断是否禁止解析当前标签
 		const attrNames = this.tags[tagName]
 		if (attrNames === false) {
@@ -113,6 +113,7 @@ export default class HTMLBundler extends Bundler implements IBundler {
 				return ""
 			}
 			// 计算属性值
+			const quote = attrString2 !== undefined ? '"' : attrString3 !== undefined ? "'" : ""
 			const attrValue = attrString2 !== undefined ? attrString2 : attrString3 !== undefined ? attrString3 : attrString
 			const attrValueIndex = index + attrSourceIndex + attrSource.length - attrString.length
 			const attrValueEndIndex = attrValueIndex + attrString.length
@@ -120,22 +121,28 @@ export default class HTMLBundler extends Bundler implements IBundler {
 			// 处理属性
 			switch (attrType) {
 				case AttrType.url:
-					this.parseURL(decodedValue, attrValueIndex, attrValueEndIndex, attrKey, module, url => quoteHTMLAttribute(url, attrString))
+					this.parseURL(decodedValue, attrValueIndex, attrValueEndIndex, attrKey, module, url => quoteHTMLAttribute(url, quote))
 					break
 				case AttrType.script:
 					if (this.script) {
-						this.parseSubfile(decodedValue, this.script, attrValueIndex, attrValueEndIndex, file, module, content => quoteHTMLAttribute(content, attrString))
+						this.parseSubmodule(decodedValue, this.script, attrValueIndex, attrValueEndIndex, attrKey, module, content => quoteHTMLAttribute(content, quote))
 					}
 					break
 				case AttrType.style:
 					if (this.style) {
-						this.parseSubfile(decodedValue, this.style, attrValueIndex, attrValueEndIndex, file, module, content => quoteHTMLAttribute(content, attrString))
+						this.parseSubmodule(decodedValue, this.style, attrValueIndex, attrValueEndIndex, attrKey, module, content => quoteHTMLAttribute(content, quote))
 					}
 					break
 				case AttrType.scriptURL:
 					if (innerHTML !== undefined) {
-						const dependency = module.addDependency(decodedValue, attrValueIndex, attrValueEndIndex, attrKey, true)
-						module.replace(index, index + openTag.length + innerHTML.length, (containingFile: VFile, builder: Builder) => {
+						const dependency = module.addDependency({
+							type: ModuleDependencyType.reference,
+							url: decodedValue,
+							index: attrValueIndex,
+							endIndex: attrValueEndIndex,
+							source: attrKey
+						})
+						document.replace(index, index + openTag.length + innerHTML.length, (module: Module, builder: Builder) => {
 							const result = new TextDocument(openTag)
 							const resolvedFile = dependency.resolvedFile
 							if (resolvedFile && dependency.inline) {
@@ -144,14 +151,14 @@ export default class HTMLBundler extends Bundler implements IBundler {
 								// 如果内联的脚本存在 </script> 会影响 HTML
 								result.append(resolvedFile.content.replace(/<\/script>/ig, "<\\/script>"))
 							} else {
-								result.replace(attrValueIndex - index, attrValueEndIndex - index, quoteHTMLAttribute(this.buildURL(dependency, containingFile, builder), attrString))
+								result.replace(attrValueIndex - index, attrValueEndIndex - index, quoteHTMLAttribute(this.buildURL(dependency, module, builder), quote))
 							}
 							return result
 						})
 						innerHTML = undefined
 						break
 					}
-					this.parseURL(decodedValue, attrValueIndex, attrValueEndIndex, attrKey, module, url => quoteHTMLAttribute(url, attrString))
+					this.parseURL(decodedValue, attrValueIndex, attrValueEndIndex, attrKey, module, url => quoteHTMLAttribute(url, quote))
 					break
 				case AttrType.styleURL:
 					// 将 <link ...> 模拟成 <style ...>
@@ -161,8 +168,14 @@ export default class HTMLBundler extends Bundler implements IBundler {
 						innerHTML = ""
 					}
 					if (innerHTML !== undefined) {
-						const dependency = module.addDependency(decodedValue, attrValueIndex, attrValueEndIndex, attrKey, true)
-						module.replace(index, index + openTag.length + innerHTML.length, (containingFile: VFile, builder: Builder) => {
+						const dependency = module.addDependency({
+							type: ModuleDependencyType.reference,
+							url: decodedValue,
+							index: attrValueIndex,
+							endIndex: attrValueEndIndex,
+							source: attrKey
+						})
+						document.replace(index, index + openTag.length + innerHTML.length, (module: Module, builder: Builder) => {
 							const result = new TextDocument(openTag)
 							const resolvedFile = dependency.resolvedFile
 							if (resolvedFile && dependency.inline) {
@@ -182,7 +195,7 @@ export default class HTMLBundler extends Bundler implements IBundler {
 										result.append(resolvedFile.content.replace(/<\/style>/ig, "<\\/style>"))
 										result.append("</style>")
 									} else {
-										result.replace(attrValueIndex - index, attrValueEndIndex - index, quoteHTMLAttribute(this.buildURL(dependency, containingFile, builder), attrString))
+										result.replace(attrValueIndex - index, attrValueEndIndex - index, quoteHTMLAttribute(this.buildURL(dependency, module, builder), quote))
 									}
 								} else {
 									// 删除 src 属性
@@ -190,14 +203,14 @@ export default class HTMLBundler extends Bundler implements IBundler {
 									result.append(resolvedFile.content.replace(/<\/style>/ig, "<\\/style>"))
 								}
 							} else {
-								result.replace(attrValueIndex - index, attrValueEndIndex - index, quoteHTMLAttribute(this.buildURL(dependency, containingFile, builder), attrString))
+								result.replace(attrValueIndex - index, attrValueEndIndex - index, quoteHTMLAttribute(this.buildURL(dependency, module, builder), quote))
 							}
 							return result
 						})
 						innerHTML = undefined
 						break
 					}
-					this.parseURL(decodedValue, attrValueIndex, attrValueEndIndex, attrKey, module, url => quoteHTMLAttribute(url, attrString))
+					this.parseURL(decodedValue, attrValueIndex, attrValueEndIndex, attrKey, module, url => quoteHTMLAttribute(url, quote))
 					innerHTML = undefined
 					break
 				case AttrType.lang:
@@ -219,7 +232,7 @@ export default class HTMLBundler extends Bundler implements IBundler {
 					// <img src="image-src.png" srcset="image-1x.png 1x, image-2x.png 2x, image-3x.png 3x, image-4x.png 4x">
 					attrValue.replace(/(?=(?:^|,)\s*)(.*?)\s+\dx/g, (urlSource: string, url: string, urlSourceIndex: number) => {
 						const startIndex = attrValueIndex + urlSourceIndex
-						this.parseURL(decodeHTML(url), startIndex, startIndex + url.length, attrKey, module, encodeHTMLAttribute)
+						this.parseURL(decodeHTML(url), startIndex, startIndex + url.length, attrKey, module, encodeHTML)
 						return ""
 					})
 					break
@@ -230,7 +243,7 @@ export default class HTMLBundler extends Bundler implements IBundler {
 		if (innerHTML !== undefined) {
 			// 删除 "lang=..."
 			if (langAttr) {
-				module.remove(index + langAttr.sourceIndex, index + langAttr.sourceIndex + langAttr.source.length)
+				document.remove(index + langAttr.sourceIndex, index + langAttr.sourceIndex + langAttr.source.length)
 			}
 			let innerHTMLIndex = index + openTag.length
 			// 忽略 CDATA 和 注释
@@ -239,7 +252,7 @@ export default class HTMLBundler extends Bundler implements IBundler {
 				innerHTMLIndex += match[0].length
 				innerHTML = innerHTML.substring(match[0].length).replace(/(?:-->|\]\]>)?\s*$/, "")
 			}
-			this.parseSubfile(innerHTML, langAttr && langAttr.value || (tagName === "script" ? this.script as string : this.style as string), innerHTMLIndex, innerHTMLIndex + innerHTML.length, file, module)
+			this.parseSubmodule(innerHTML, langAttr && langAttr.value ? `.${langAttr.value}` : (tagName === "script" ? this.script as string : this.style as string), innerHTMLIndex, innerHTMLIndex + innerHTML.length, tagName, module)
 		}
 	}
 
@@ -251,9 +264,10 @@ export default class HTMLBundler extends Bundler implements IBundler {
 	 * @param comment 要解析的片段源码
 	 * @param content 要解析的标签内容
 	 * @param index HTML 注释在源文件的起始索引（从 0 开始）
+	 * @param document 当前正在解析的文档
 	 * @param module 当前正在解析的模块
 	 */
-	protected parseComment(comment: string, content: string, index: number, module: Module) {
+	protected parseComment(comment: string, content: string, index: number, module: TextModule) {
 		if (!this.include) {
 			return
 		}
@@ -284,12 +298,12 @@ export interface HTMLBundlerOptions extends BundlerOptions {
 		include?: boolean
 		/**
 		 * 指定内联脚本及无语言标识的脚本语言，指定为 false 则不处理
-		 * @default "jsx"
+		 * @default ".jsx"
 		 */
 		js?: string | false,
 		/**
 		 * 指定内联样式及无语言标识的样式语言，指定为 false 则不处理
-		 * @default "css"
+		 * @default ".css"
 		 */
 		css?: string | false
 	}
@@ -315,9 +329,4 @@ export const enum AttrType {
 	lang,
 	/** 属性值是一个 rel 标识 */
 	rel,
-}
-
-/** 表示一个 HTML 模块 */
-export class HTMLModule extends Module {
-
 }

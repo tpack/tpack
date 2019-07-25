@@ -88,13 +88,14 @@ export function removeANSICodes(content: string) {
  * @param ellipsis 内容超出最大宽度后使用的省略号
  * @param maxWidth 允许显示的最大宽度（一般地，西文字母宽度为 1，中文文字宽度为 2）
  */
-export function truncateString(content: string, ellipsis = "...", maxWidth = process.stdout.columns || Infinity) {
+export function truncateString(content: string, ellipsis?: string, maxWidth = process.stdout.columns || Infinity) {
 	// 减去省略号本身的宽度
-	const ellipsisWidth = getStringWidth(ellipsis)
-	if (maxWidth <= ellipsisWidth) {
-		ellipsis = ellipsis.substring(0, maxWidth - 1)
-	}
+	const ellipsisWidth = ellipsis === undefined ? 3 : getStringWidth(ellipsis)
 	maxWidth -= ellipsisWidth
+	// 每个字符最大宽 2，如果最大可能宽度未超过最大值，直接返回
+	if (content.length * 2 < maxWidth) {
+		return content
+	}
 	// 统计所有 ANSI 控制符的位置，用于检索
 	// 数组的内容为 [开始位置1, 结束位置1, 开始位置2, ...]
 	const ansiCodes: number[] = []
@@ -152,7 +153,7 @@ export function truncateString(content: string, ellipsis = "...", maxWidth = pro
 		ansiString += content.substring(ansiCodes[controlLeft], ansiCodes[controlLeft + 1] + 1)
 	}
 	// 截断并排版
-	return `${content.substring(0, left)}${ansiString}${ellipsis}${content.substring(right + 1)}`
+	return `${content.substring(0, left)}${ansiString}${ellipsis === undefined ? "..." : ellipsis}${content.substring(right + 1)}`
 }
 
 /**

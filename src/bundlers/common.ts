@@ -1,13 +1,18 @@
-import { stringify } from "querystring"
-import { format, parse } from "url"
+import { readFileSync } from "fs"
+import { dirname, resolve } from "path"
+import { stringify as stringifyQuery } from "querystring"
+import { format as formatURL, parse as parseURL } from "url"
 import { Builder } from "../core/builder"
-import { Bundler as IBundler } from "../core/bundler"
-import { Module, ModuleDependency, ModuleState } from "../core/module"
+import { Bundler } from "../core/bundler"
+import { i18n } from "../core/i18n"
+import { Module, ModuleDependency, ModuleDependencyType } from "../core/module"
 import { Resolver, ResolverOptions } from "../core/resolver"
-import { getDir, relativePath } from "../utils/path"
+import { encodeDataURI } from "../utils/base64"
+import { getDir, isAbsolutePath, relativePath } from "../utils/path"
+import { TextDocument } from "../utils/textDocument"
 
-/** 表示一个模块依赖打包器基类 */
-export abstract class Bundler implements IBundler {
+/** 表示一个文本模块依赖打包器 */
+export abstract class TextBundler implements Bundler {
 
 	// #region 选项
 
@@ -17,35 +22,141 @@ export abstract class Bundler implements IBundler {
 	 * @param builder 所属的构建器
 	 */
 	constructor(options: BundlerOptions, builder: Builder) {
+		const resolveOptions = options.resolve || {}
+		this.resolveOptions = {
+			inlineQuery: resolveOptions.inlineQuery !== undefined ? resolveOptions.inlineQuery : "inline",
+			noCheckQuery: resolveOptions.noCheckQuery !== undefined ? resolveOptions.noCheckQuery : "nocheck",
+			resolver: resolveOptions.type === "node" ? new Resolver(resolveOptions, builder.fs) : undefined,
+			builtinModules: resolveOptions.type === "node" ? Object.setPrototypeOf(Object.assign(JSON.parse(readFileSync(`${__dirname}/../configs/builtinModules.json`, "utf-8")), resolveOptions.builtinModules), null) : undefined,
+			before: resolveOptions.before,
+			enforceCaseSensitive: resolveOptions.enforceCaseSensitive,
+			after: resolveOptions.after,
+		}
 		const outputOptions = options.output || {}
-		this.formatURLPath = outputOptions.formatURLPath || (outputOptions.publicURL != undefined ? (file, containingFile, builder) => outputOptions.publicURL + builder.relativePath(file.path) : (file, containingFile) => relativePath(getDir(containingFile.path), file.path))
-		this.appendURLQuery = typeof outputOptions.appendURLQuery !== "string" ? outputOptions.appendURLQuery : (file, containingFile, builder) => builder.formatPath(outputOptions.appendURLQuery as string, file)
-		this.formatURL = outputOptions.formatURL || (dependency => format(dependency))
-		// this.prepend = typeof options.prepend === "string" ? (module, builder) => builder.formatPath(options.prepend as string, module) : options.prepend
-		// this.append = typeof options.append === "string" ? (module, builder) => builder.formatPath(options.append as string, module) : options.append
-		// this.modulePrepend = typeof options.modulePrepend === "string" ? (module, _, builder) => builder.formatPath(options.modulePrepend as string, module) : options.modulePrepend
-		// this.moduleAppend = typeof options.moduleAppend === "string" ? (module, _, builder) => builder.formatPath(options.moduleAppend as string, module) : options.moduleAppend
-		// this.moduleSeparator = options.moduleSeparator != undefined ? options.moduleSeparator : "\n\n"
-		// this.indentString = options.indentString != undefined ? options.indentString : "  "
-		// this.newLine = options.newLine != undefined ? options.newLine : "\n"
-
-		this.resolvers = {}
-		this.noCheckQuery = options.noCheckQuery !== undefined ? options.noCheckQuery : "nocheck"
-		this.inlineQuery = options.inlineQuery !== undefined ? options.inlineQuery : "inline"
+		this.outputOptions = {
+			formatPath: outputOptions.formatURLPath || (outputOptions.publicURL != undefined ? (dependencyModule, module, builder) => outputOptions.publicURL + builder.relativePath(dependencyModule.path) : (dependencyModule, module) => relativePath(getDir(module.path), dependencyModule.path)),
+			formatURL: outputOptions.formatURL || (dependency => formatURL(dependency)),
+			prepend: typeof outputOptions.prepend === "string" ? (module, builder) => builder.formatPath(outputOptions.prepend as string, module) : outputOptions.prepend,
+			append: typeof outputOptions.append === "string" ? (module, builder) => builder.formatPath(outputOptions.append as string, module) : outputOptions.append,
+			modulePrepend: typeof outputOptions.modulePrepend === "string" ? (module, _, builder) => builder.formatPath(outputOptions.modulePrepend as string, module) : outputOptions.modulePrepend,
+			moduleAppend: typeof outputOptions.moduleAppend === "string" ? (module, _, builder) => builder.formatPath(outputOptions.moduleAppend as string, module) : outputOptions.moduleAppend,
+			moduleSeparator: outputOptions.moduleSeparator != undefined ? outputOptions.moduleSeparator : "\n\n",
+			indentString: outputOptions.indentString != undefined ? outputOptions.indentString : "  ",
+			newLine: outputOptions.newLine != undefined ? outputOptions.newLine : "\n"
+		}
 	}
 
 	// #endregion
 
-	// #region 流程
+	// #region 解析
 
 	/**
 	 * 解析指定的模块
 	 * @param module 要解析的模块
 	 * @param builder 当前的构建器对象
 	 */
-	parse(module: Module, builder: Builder) {
-
+	parse(module: TextModule, builder: Builder) {
+		return this.parseDocument(module.document = new TextDocument(module.content, module.originalPath, module.sourceMapData), module, builder)
 	}
+
+	/**
+	 * 解析指定的文本模块
+	 * @param document 要解析的文档
+	 * @param module 要解析的模块
+	 * @param builder 当前的构建器对象
+	 */
+	protected abstract parseDocument(document: TextDocument, module: TextModule, builder: Builder): void | Promise<void>
+
+	/**
+	 * 解析模块中的一个依赖地址
+	 * @param url 要解析的地址
+     * @param startIndex 地址在源文件的开始索引
+     * @param endIndex 地址在源文件的结束索引（不含）
+	 * @param source 依赖的类型
+	 * @param module 地址所在的模块
+	 * @param formatter 格式化输出内容的函数
+	 * @param formatter.content 要格式化的内容
+	 * @param formatter.module 最终生成的目标模块
+	 * @param formatter.builder 当前的构建器对象
+	 */
+	protected parseURL(url: string, startIndex: number, endIndex: number, source: string, module: TextModule, formatter?: (content: string, module: Module, builder: Builder) => string) {
+		const dependency = module.addDependency({
+			type: ModuleDependencyType.reference,
+			url: url,
+			index: startIndex,
+			endIndex: endIndex,
+			source: source,
+		})
+		module.document.replace(startIndex, endIndex, (module: Module, builder: Builder) => {
+			const url = this.buildURL(dependency, module, builder)
+			return formatter ? formatter(url, module, builder) : url
+		})
+	}
+
+	/**
+	 * 解析要包含的模块
+	 * @param url 要解析的包含地址
+     * @param startIndex 地址在源文件的开始索引
+     * @param endIndex 地址在源文件的结束索引（不含）
+	 * @param source 依赖的类型
+	 * @param replaceStartIndex 源文件需要替换的开始索引
+	 * @param replaceEndIndex 源文件需要替换的结束索引（不含）
+	 * @param module 地址所在的模块
+	 */
+	protected parseInclude(url: string, startIndex: number, endIndex: number, source: string, replaceStartIndex: number, replaceEndIndex: number, module: TextModule) {
+		const dependency = module.addDependency({
+			type: ModuleDependencyType.reference,
+			url: url,
+			index: startIndex,
+			endIndex: endIndex,
+			inline: true,
+			source: source,
+		})
+		module.document.replace(replaceStartIndex, replaceEndIndex, (generatedModule: Module, builder: Builder) => {
+			const dependencyModule = dependency.module as TextModule
+			if (!dependencyModule) {
+				return module.content.substring(replaceStartIndex, replaceEndIndex)
+			}
+			if (dependency.circular) {
+				generatedModule.addError({
+					message: `Circular include '${builder.logger.formatPath(dependencyModule.originalPath)}'`,
+					index: dependency.index,
+					endIndex: dependency.endIndex
+				})
+				return module.content.substring(replaceStartIndex, replaceEndIndex)
+			}
+			return dependencyModule.document || dependencyModule.content
+		})
+	}
+
+	/**
+	 * 解析内联的独立模块
+	 * @param content 要解析的源码内容
+	 * @param ext 源码的扩展名（含点）
+	 * @param startIndex 子模块在源模块的开始索引
+	 * @param endIndex 子模块在源模块的结束索引（不含）
+	 * @param source 依赖的类型
+	 * @param module 子模块所在的模块
+	 * @param formatter 格式化输出内容的函数
+	 * @param formatter.content 要格式化的内容
+	 * @param formatter.module 最终生成的目标模块
+	 * @param formatter.builder 当前的构建器对象
+	 */
+	protected parseSubmodule(content: string, ext: string, startIndex: number, endIndex: number, source: string, module: TextModule, formatter?: (content: string, module: Module, builder: Builder) => string) {
+		const dependency = module.addDependency({
+			type: ModuleDependencyType.reference,
+			module: module.createSubmodule(`${source}-${startIndex}${ext}`, content, startIndex),
+			index: startIndex,
+			endIndex: endIndex,
+			inline: true,
+			source: source,
+		})
+		module.document.replace(startIndex, endIndex, formatter ? (containingFile: Module, builder: Builder) => formatter(dependency.module!.content, containingFile, builder) : () => dependency.module!.content)
+	}
+
+	// #endregion
+
+	// #region 解析地址
 
 	/** 所有可用的模块依赖解析器 */
 	readonly resolveOptions: {
@@ -56,7 +167,7 @@ export abstract class Bundler implements IBundler {
 		/**
 		 * 在解析依赖之前的回调函数
 		 * @param dependency 要解析的依赖项
-		 * @param file 当前地址所在的文件
+		 * @param module 当前地址所在的模块
 		 * @param builder 当前的构建器对象
 		 */
 		readonly before?: (dependency: ModuleDependency, module: Module, builder: Builder) => void | Promise<void>
@@ -71,29 +182,36 @@ export abstract class Bundler implements IBundler {
 		/**
 		 * 在解析依赖之后的回调函数
 		 * @param dependency 要解析的依赖项
-		 * @param file 当前地址所在的文件
+		 * @param module 当前地址所在的模块
 		 * @param builder 当前的构建器对象
 		 */
 		readonly after?: (dependency: ModuleDependency, module: Module, builder: Builder) => void | Promise<void>
 	}
 
-	/** 
+	/**
 	 * 解析指定的依赖
 	 * @param dependency 要解析的依赖项
 	 * @param module 当前地址所在的文件
 	 * @param builder 当前的构建器对象
 	 */
-	async resolve(dependency: ModuleDependency, module: Module, builder: Builder) {
+	async resolve(dependency: ModuleURLDependency, module: Module, builder: Builder) {
 		const resolveOptions = this.resolveOptions
 		// 支持 ?nocheck&inline
-		const url = parse(dependency.url!, true, true)
+		const url = parseURL(dependency.url!, true, true)
+		dependency.protocol = url.protocol
+		dependency.slashes = url.slashes
+		dependency.auth = url.auth
+		dependency.host = url.host
+		dependency.pathname = url.pathname
+		dependency.search = url.search
+		dependency.query = url.query
+		dependency.hash = url.hash
 		if (url.search) {
 			if (resolveOptions.noCheckQuery) {
 				const noCheck = dependency.query[resolveOptions.noCheckQuery]
 				if (noCheck !== undefined) {
 					delete dependency.query[resolveOptions.noCheckQuery]
-					url.search = stringify(dependency.query)
-					dependency.url = format(url)
+					dependency.search = stringifyQuery(dependency.query)
 				}
 				if (noCheck === "" || noCheck === "true") {
 					return false
@@ -103,7 +221,7 @@ export abstract class Bundler implements IBundler {
 				const inline = dependency.query[resolveOptions.inlineQuery]
 				if (inline !== undefined) {
 					delete dependency.query[resolveOptions.inlineQuery]
-					dependency.search = stringify(dependency.query)
+					dependency.search = stringifyQuery(dependency.query)
 				}
 				if (inline === "" || inline === "true") {
 					dependency.inline = true
@@ -117,43 +235,40 @@ export abstract class Bundler implements IBundler {
 			await resolveOptions.before(dependency, module, builder)
 		}
 		let resolvedPath: string | null | false | undefined
-		let detail: string | undefined
-		const name = dependency.pathname || ""
 		// 忽略绝对地址(http://..., javascript:..., /path/to/file...)
-		if (!dependency.hostname && !dependency.protocol && name && name.charCodeAt(0) !== 47 /*/*/) {
-			if (resolveOptions.moduleResolver) {
+		if (!dependency.protocol && !dependency.slashes && dependency.pathname && !dependency.pathname.startsWith("/")) {
+			const name = dependency.pathname!
+			if (resolveOptions.resolver) {
 				// 解析模块(node_modules)
 				if (resolveOptions.builtinModules && (resolvedPath = resolveOptions.builtinModules[name]) !== undefined) {
+					// 解析内置模块
 					// 首次使用自动下载依赖
 					if (resolvedPath && !isAbsolutePath(resolvedPath)) {
-						resolveOptions.builtinModules[name] = resolvedPath = await builder.requireResolve(resolvedPath)
+						resolveOptions.builtinModules[name] = resolvedPath = await builder.resolvePackage(resolvedPath, true)
 					}
 				} else {
-					const containingDir = getDir(module.originalPath)
-					if ((resolvedPath = await resolveOptions.moduleResolver.resolve(name, containingDir)) === null) {
+					const containingDir = dirname(module.originalPath)
+					if ((resolvedPath = await resolveOptions.resolver.resolve(name, containingDir)) === null) {
 						// 自动安装文件
-						if (builder.autoInstall) {
-							await builder.installPackage(name)
-						}
+						await builder.installPackage(name)
 						// 重新解析一次，收集错误原因
 						const trace: string[] = []
-						resolvedPath = await resolveOptions.moduleResolver.resolve(name, containingDir, trace)
-						detail = trace.join("\n")
+						resolvedPath = await resolveOptions.resolver.resolve(name, containingDir, trace)
+						dependency.detail = trace.join("\n")
 					}
 				}
 			} else {
 				// 解析相对路径
-				resolvedPath = resolvePath(module.originalPath, "..", name)
+				resolvedPath = resolve(module.originalPath, "..", name)
 				const realPath = await builder.fs.getRealPath(resolvedPath)
 				if (realPath) {
 					// 检查大小写
-					if (resolver.enforceCaseSensitive) {
+					if (resolveOptions.enforceCaseSensitive) {
 						const baseDir = getDir(module.originalPath)
 						const realUrl = relativePath(baseDir, realPath)
 						const actualUrl = relativePath(baseDir, resolvedPath)
 						if (realUrl !== actualUrl) {
 							module.addWarning({
-								source: this.constructor.name,
 								message: i18n`Case mismatched: '${actualUrl}' should be '${realUrl}'`,
 								index: dependency.index,
 								endIndex: dependency.endIndex,
@@ -171,257 +286,123 @@ export abstract class Bundler implements IBundler {
 		}
 		if (resolveOptions.after) {
 			await resolveOptions.after(dependency, module, builder)
-			resolvedPath = dependency.resolvedPath
+			resolvedPath = dependency.path
 		}
 		return resolvedPath
 	}
 
-	/**
-	 * 生成指定的文件
-	 * @param file 要生成的文件
-	 * @param builder 当前的构建器对象
-	 */
-	async generate(file: Module, builder: Builder) {
-		const module = file.getProp(Module) as Module
-		if (!module) {
-			return
-		}
-		let pathFixed = 0
-		for (const dependency of module.dependecies) {
-			// 跳过不能正确解析的依赖
-			const resolvedFile = dependency.resolvedFile
-			if (!resolvedFile) {
-				continue
-			}
-			// todo: 警告路径不能被修改
-			pathFixed = 1
-			// 如果静态依赖外部模块，则无需生成目标模块
-			if (!resolvedFile.isExternal || dependency.dynamic) {
-				await builder.emitFile(resolvedFile)
-				// 自动内联不生成最终文件的依赖
-				if (resolvedFile.noWrite) {
-					dependency.inline = true
-				}
-				// 生成 A 时会将 A 标记为“正在生成”，然后生成依赖 B
-				// 生成 B 时会将 B 标记为“正在生成”，然后生成依赖 A
-				// 此时如果发现 A 正在生成，说明存在循环依赖
-				if (resolvedFile.state === ModuleState.emitting) {
-					pathFixed = 2
-					if (dependency.dynamic) {
-						if (dependency.inline) {
-							dependency.inline = false
-							file.addError({
-								source: this.constructor.name,
-								message: i18n`Cannot inline '${builder.logger.formatPath(resolvedFile.originalPath)}' because of circular reference`,
-								index: dependency.index,
-								endIndex: dependency.endIndex
-							})
-						}
-					} else {
-						dependency.resolvedFile = undefined
-						file.addError({
-							source: this.constructor.name,
-							message: i18n`Circular dependency with '${builder.logger.formatPath(resolvedFile.originalPath)}'`,
-							index: dependency.index,
-							endIndex: dependency.endIndex
-						})
-					}
-				}
-			}
-			if (dependency.inline && resolvedFile.data === undefined) {
-				await builder.readFile(resolvedFile, false, this.constructor.name)
-			}
-			// 记录依赖
-			file.addDependency({
-				source: this.constructor.name,
-				file: resolvedFile,
-				type: dependency.type,
-				//	watch: dependency.dynamic && !dependency.inline ? "reloadOnDelete" : "reemit"
-			})
-		}
-		if (pathFixed) {
-			let path = file.path
-			Object.defineProperty(file, "path", {
-				get() {
-					return path
-				},
-				set(value) {
-					if (pathFixed === 1 ? getDir(path) !== getDir(value) : path !== value) {
-						file.addWarning(i18n`Changing the path of file during optimizing will cause the relative path in this file cannot be resolved correctly`)
-					}
-					path = value
-				}
-			})
-		}
-		if (file.sourceMap) {
-			const result = module.generate(file, builder)
-			file.content = result.content
-			file.sourceMapBuilder = result.sourceMapBuilder
-		} else {
-			file.content = module.toString(file, builder)
-		}
-	}
-
 	// #endregion
 
-	// #region 辅助
+	// #region 合成
 
 	/**
-	 * 解析模块中的一个地址
-	 * @param url 要解析的地址
-     * @param startIndex 地址在源文件的开始索引
-     * @param endIndex 地址在源文件的结束索引（不含）
-	 * @param type 地址的类型
-	 * @param module 地址所在的模块
-	 * @param formatter 格式化输出内容的函数
-	 * @param formatter.content 要格式化的内容
-	 * @param formatter.containingFile 最终生成的目标文件
-	 * @param formatter.builder 当前的构建器对象
+	 * 合成指定的模块
+	 * @param module 要合成的模块
+	 * @param generatedModule 合成的目标模块
+	 * @param builder 当前的构建器对象
 	 */
-	protected parseURL(url: string, startIndex: number, endIndex: number, type: string, module: Module, formatter?: (content: string, containingFile: Module, builder: Builder) => string) {
-		const dependency = module.addDependency(url, startIndex, endIndex, type, true)
-		module.replace(startIndex, endIndex, (containingFile: Module, builder: Builder) => {
-			const url = this.buildURL(dependency, containingFile, builder)
-			return formatter ? formatter(url, containingFile, builder) : url
-		})
+	generate(module: TextModule, generatedModule: Module, builder: Builder) {
+		if (module.sourceMap) {
+			const result = module.document.generate(generatedModule, builder)
+			generatedModule.content = result.content
+			generatedModule.sourceMapBuilder = result.sourceMapBuilder
+		} else {
+			generatedModule.content = module.document.toString(generatedModule, builder)
+		}
 	}
 
-	/**
-	 * 计算最终在生成模块中引用其它模块的地址的回调函数
-	 * @param file 依赖的文件
-	 * @param containingFile 生成的目标文件
-	 * @param builder 当前的构建器对象
-	 * @returns 返回生成的地址
-	 */
-	readonly formatURLPath: (file: Module, containingFile: Module, builder: Builder) => string
-
-	/** 
-	 * 计算在地址查询参数追加内容的回调函数
-	 * @param file 依赖的文件
-	 * @param containingFile 生成的目标文件
-	 * @param builder 当前的构建器对象
-	 * @returns 返回生成的查询参数
-	 */
-	readonly appendURLQuery?: (file: Module, containingFile: Module, builder: Builder) => string
-
-	/**
-	 * 计算最终在生成模块中引用其它模块的地址的回调函数
-	 * @param dependency 依赖项
-	 * @param containingFile 生成的目标文件
-	 * @param builder 当前的构建器对象
-	 * @returns 返回生成的地址
-	 */
-	readonly formatURL: (dependency: ModuleDependency, containingFile: Module, builder: Builder) => string
+	/** 模块输出的选项 */
+	readonly outputOptions: {
+		/**
+		 * 计算最终在生成模块中引用其它模块的地址的回调函数
+		 * @param dependencyModule 依赖的模块
+		 * @param module 生成的目标模块
+		 * @param builder 当前的构建器对象
+		 * @returns 返回生成的地址
+		 */
+		readonly formatPath: (dependencyModule: Module, module: Module, builder: Builder) => string
+		/**
+		 * 计算在地址查询参数追加内容的回调函数
+		 * @param dependencyModule 依赖的模块
+		 * @param module 生成的目标模块
+		 * @param builder 当前的构建器对象
+		 * @returns 返回生成的查询参数
+		 */
+		readonly appendQuery?: (dependencyModule: Module, module: Module, builder: Builder) => string
+		/**
+		 * 计算最终在生成模块中引用其它模块的地址的回调函数
+		 * @param dependency 依赖项
+		 * @param module 生成的目标模块
+		 * @param builder 当前的构建器对象
+		 * @returns 返回生成的地址
+		 */
+		readonly formatURL: (dependency: ModuleURLDependency, module: Module, builder: Builder) => string
+		/**
+		 * 在最终合并生成的模块开头追加的内容
+		 * @param module 要生成的模块
+		 * @param builder 当前的构建器对象
+		 * @example "/* This file is generated by tpack. DO NOT EDIT DIRECTLY!! *‌/"
+		 */
+		readonly prepend?: (module: Module, builder: Builder) => string
+		/**
+		 * 在最终合并生成的模块末尾追加的内容
+		 * @param module 要生成的模块
+		 * @param builder 当前的构建器对象
+		 */
+		readonly append?: (module: Module, builder: Builder) => string
+		/**
+		 * 在每个依赖模块开头追加的内容
+		 * @param dependencyModule 引用的模块
+		 * @param module 要生成的模块
+		 * @param builder 当前的构建器对象
+		 */
+		readonly modulePrepend?: (dependencyModule: Module, module: Module, builder: Builder) => string
+		/**
+		 * 在每个依赖模块末尾追加的内容
+		 * @param dependencyModule 引用的模块
+		 * @param module 要生成的模块
+		 * @param builder 当前的构建器对象
+		 */
+		readonly moduleAppend?: (dependencyModule: Module, module: Module, builder: Builder) => string
+		/** 在每个依赖模块之间插入的代码 */
+		readonly moduleSeparator?: string
+		/** 生成的文件中用于缩进源码的字符串 */
+		readonly indentString?: string
+		/** 生成的文件中用于换行的字符串 */
+		readonly newLine?: string
+	}
 
 	/**
 	 * 获取指定依赖的最终引用地址
 	 * @param dependency 依赖项
-	 * @param containingFile 生成的目标文件
+	 * @param module 生成的目标文件
 	 * @param builder 当前的构建器对象
 	 */
-	protected buildURL(dependency: ModuleDependency, containingFile: Module, builder: Builder) {
-		const resolvedFile = dependency.resolvedFile
-		if (resolvedFile) {
+	protected buildURL(dependency: ModuleDependency, module: Module, builder: Builder) {
+		const dependencyModule = dependency.module
+		if (dependencyModule) {
 			// 内联文件
 			if (dependency.inline) {
-				return encodeDataURI(resolvedFile.type!, resolvedFile.buffer)
+				if (dependency.circular) {
+					module.addError({
+						message: `Circular inline '${builder.logger.formatPath(dependencyModule.originalPath)}'`,
+						index: dependency.index,
+						endIndex: dependency.endIndex
+					})
+				} else {
+					return encodeDataURI(dependencyModule.type!, dependencyModule.buffer)
+				}
 			}
 			// 格式化地址
 			dependency = { ...dependency }
-			dependency.pathname = this.formatURLPath(resolvedFile, containingFile, builder)
-			if (this.appendURLQuery) {
-				const newQuery = this.appendURLQuery(resolvedFile, containingFile, builder)
+			dependency.pathname = this.outputOptions.formatPath(dependencyModule, module, builder)
+			if (this.outputOptions.appendQuery) {
+				const newQuery = this.outputOptions.appendQuery(dependencyModule, module, builder)
 				dependency.search = dependency.search ? dependency.search + "&" + newQuery : newQuery
 			}
 		}
-		return this.formatURL(dependency, containingFile, builder)
+		return this.outputOptions.formatURL(dependency, module, builder)
 	}
-
-	/**
-	 * 解析要包含的文件
-	 * @param url 要解析的包含地址
-     * @param urlStartIndex 地址在源文件的开始索引
-     * @param urlEndIndex 地址在源文件的结束索引（不含）
-	 * @param type 包含的类型
-	 * @param startIndex 源文件需要替换的开始索引
-	 * @param endIndex 源文件需要替换的结束索引（不含）
-	 * @param module 地址所在的模块
-	 */
-	protected parseInclude(url: string, urlStartIndex: number, urlEndIndex: number, type: string, startIndex: number, endIndex: number, module: Module) {
-		const dependency = module.addDependency(url, urlStartIndex, urlEndIndex, type)
-		module.replace(startIndex, endIndex, () => {
-			const resolvedFile = dependency.resolvedFile
-			if (!resolvedFile) {
-				return module.content.substring(startIndex, endIndex)
-			}
-			const other = resolvedFile.getProp(Module) as Module
-			if (other && other.constructor === module.constructor) {
-				return other
-			}
-			return resolvedFile.content
-		})
-	}
-
-	/**
-	 * 解析内联的独立文件
-	 * @param content 要解析的源码内容
-	 * @param type 源码的扩展名类型
-	 * @param startIndex 子文件在源文件的开始索引
-	 * @param endIndex 子文件在源文件的结束索引（不含）
-	 * @param file 所在的文件
-	 * @param module 子文件所在的模块
-	 * @param formatter 格式化输出内容的函数
-	 * @param formatter.content 要格式化的内容
-	 * @param formatter.containingFile 最终生成的目标文件
-	 * @param formatter.builder 当前的构建器对象
-	 */
-	protected parseSubfile(content: string, type: string, startIndex: number, endIndex: number, file: Module, module: Module, formatter?: (content: string, containingFile: Module, builder: Builder) => string) {
-		const subfile = file.createSubfile(`${file.originalPath}|${startIndex}.${type}`, content, startIndex)
-		subfile.noWrite = true
-		const dependency = { dynamic: true, resolvedFile: subfile } as ModuleDependency
-		module.dependecies.push(dependency)
-		module.replace(startIndex, endIndex, formatter ? (containingFile: Module, builder: Builder) => formatter(subfile.content, containingFile, builder) : () => subfile.content)
-	}
-
-	/**
-	 * 在最终合并生成的模块开头追加的内容
-	 * @param containingModule 要生成的模块
-	 * @param builder 当前的构建器对象
-	 * @example "/* This file is generated by tpack. DO NOT EDIT DIRECTLY!! *‌/"
-	 */
-	readonly prepend?: (containingModule: Module, builder: Builder) => string
-
-	/**
-	 * 在最终合并生成的模块末尾追加的内容
-	 * @param containingModule 要生成的模块
-	 * @param builder 当前的构建器对象
-	 */
-	readonly append?: (containingModule: Module, builder: Builder) => string
-
-	/**
-	 * 在每个依赖模块开头追加的内容
-	 * @param module 引用的模块
-	 * @param containingModule 要生成的模块
-	 * @param builder 当前的构建器对象
-	 */
-	readonly modulePrepend?: (module: Module, containingModule: Module, builder: Builder) => string
-
-	/**
-	 * 在每个依赖模块末尾追加的内容
-	 * @param module 引用的模块
-	 * @param containingModule 要生成的模块
-	 * @param builder 当前的构建器对象
-	 */
-	readonly moduleAppend?: (module: Module, containingModule: Module, builder: Builder) => string
-
-	/** 在每个依赖模块之间插入的代码 */
-	readonly moduleSeparator?: string
-
-	/** 生成的文件中用于缩进源码的字符串 */
-	readonly indentString?: string
-
-	/** 生成的文件中用于换行的字符串 */
-	readonly newLine?: string
 
 	// #endregion
 
@@ -437,16 +418,18 @@ export interface BundlerOptions {
 		 * - `"node"`: 采用和 Node.js 中 `require` 相同的方式解析
 		 */
 		type?: "relative" | "node"
-		/** 
+		/**
 		 * 用于标记不检查指定地址的查询参数名
 		 * @default "nocheck"
 		 */
 		noCheckQuery?: string | false
-		/** 
+		/**
 		 * 用于标记内联引用的查询参数名
 		 * @default "inline"
 		 */
 		inlineQuery?: string | false
+		/** 所有内置模块 */
+		readonly builtinModules?: { [name: string]: string | false }
 		/**
 		 * 在解析模块路径之前的回调函数
 		 * @param dependency 要解析的依赖对象
@@ -466,12 +449,12 @@ export interface BundlerOptions {
 	output?: {
 		/**
 		 * 计算最终在生成模块中引用其它模块的地址的回调函数
-	 	 * @param file 依赖的文件
-	 	 * @param containingFile 生成的目标文件
+	 	 * @param moduleDependency 依赖的文件
+	 	 * @param module 生成的目标文件
 	 	 * @param builder 当前的构建器对象
 		 * @returns 返回生成的地址
 		 */
-		formatURLPath?: (file: Module, containingFile: Module, builder: Builder) => string
+		formatURLPath?: (moduleDependency: Module, module: Module, builder: Builder) => string
 		/**
 		 * 最终引用模块的根地址，一般以 `/` 结尾
 		 * @description 如果需要使用 CDN，可配置成 CDN 的根地址，同时记得在发布后将相关文件上传到 CDN 服务器
@@ -489,22 +472,21 @@ export interface BundlerOptions {
 		 * - `<sha1>`: 要生成的模块内容的 SHA-1 串（小写），默认截取前 8 位，如果要截取前 n 位，使用 `<sha1:n>`
 		 * - `<date>`: 当前时间，默认为用户本地可读格式，如果要自定义格式，使用如 `<date:yyyyMMdd>`
 		 * - `<random>`: 随机整数，默认为 8 位，如果要自定义为 n  位，使用如 `<rand:n>`
-		 * - `<builder>`: 构建器的名字，默认为 `TPack`
 		 * - `<version>`: 构建器的版本号
-	  	 * @param file 依赖的文件
-	  	 * @param containingFile 生成的目标文件
+	  	 * @param moduleDependency 依赖的文件
+	  	 * @param module 生成的目标文件
 	  	 * @param builder 当前的构建器对象
 	  	 * @returns 返回生成的查询参数
 		 */
-		appendURLQuery?: string | ((file: Module, containingFile: Module, builder: Builder) => string)
+		appendURLQuery?: string | ((moduleDependency: Module, module: Module, builder: Builder) => string)
 		/**
 		 * 自定义最终生成的模块引用其它模块的地址的回调函数
 		 * @param dependency 依赖项
-		 * @param containingFile 生成的目标文件
+		 * @param module 生成的目标文件
 		 * @param builder 当前的构建器对象
 		 * @returns 返回生成的地址
 		 */
-		formatURL?: (dependency: ModuleDependency, containingFile: Module, builder: Builder) => string
+		formatURL?: (dependency: ModuleURLDependency, module: Module, builder: Builder) => string
 		/**
 		 * 在最终合并生成的模块开头追加的内容，如果是字符串，则其中以下标记会被替换：
 		 * - `<path>`: 要生成的模块的相对路径，等价于 `<dir>/<name><ext>`
@@ -515,13 +497,12 @@ export interface BundlerOptions {
 		 * - `<sha1>`: 要生成的模块内容的 SHA-1 串（小写），默认截取前 8 位，如果要截取前 n 位，使用 `<sha1:n>`
 		 * - `<date>`: 当前时间，默认为用户本地可读格式，如果要自定义格式，使用如 `<date:yyyyMMdd>`
 		 * - `<random>`: 随机整数，默认为 8 位，如果要自定义为 n  位，使用如 `<rand:n>`
-		 * - `<builder>`: 构建器的名字，默认为 `TPack`
 		 * - `<version>`: 构建器的版本号
-		 * @param containingModule 要生成的模块
+		 * @param module 要生成的模块
 		 * @param builder 当前的构建器对象
 		 * @example "/* This file is generated by <builder>. DO NOT EDIT DIRECTLY!! *‌/"
 		 */
-		prepend?: string | ((containingModule: Module, builder: Builder) => string)
+		prepend?: string | ((module: Module, builder: Builder) => string)
 		/**
 		 * 在最终合并生成的模块末尾追加的内容，如果是字符串，则其中以下标记会被替换：
 		 * - `<path>`: 要生成的模块的相对路径，等价于 `<dir>/<name><ext>`
@@ -532,12 +513,11 @@ export interface BundlerOptions {
 		 * - `<sha1>`: 要生成的模块内容的 SHA-1 串（小写），默认截取前 8 位，如果要截取前 n 位，使用 `<sha1:n>`
 		 * - `<date>`: 当前时间，默认为用户本地可读格式，如果要自定义格式，使用如 `<date:yyyyMMdd>`
 		 * - `<random>`: 随机整数，默认为 8 位，如果要自定义为 n  位，使用如 `<random:n>`
-		 * - `<builder>`: 构建器的名字，默认为 `TPack`
 		 * - `<version>`: 构建器的版本号
-		 * @param containingModule 要生成的模块
+		 * @param module 要生成的模块
 		 * @param builder 当前的构建器对象
 		 */
-		append?: string | ((containingModule: Module, builder: Builder) => string)
+		append?: string | ((module: Module, builder: Builder) => string)
 		/**
 		 * 在每个依赖模块开头追加的内容，如果是字符串，则其中以下标记会被替换：
 		 * - `<path>`: 引用的模块的相对路径，等价于 `<dir>/<name><ext>`
@@ -548,13 +528,12 @@ export interface BundlerOptions {
 		 * - `<sha1>`: 引用的模块内容的 SHA-1 串（小写），默认截取前 8 位，如果要截取前 n 位，使用 `<sha1:n>`
 		 * - `<date>`: 当前时间，默认为用户本地可读格式，如果要自定义格式，使用如 `<date:yyyyMMdd>`
 		 * - `<random>`: 随机整数，默认为 8 位，如果要自定义为 n  位，使用如 `<random:n>`
-		 * - `<builder>`: 构建器的名字，默认为 `TPack`
 		 * - `<version>`: 构建器的版本号
-		 * @param module 引用的模块
-		 * @param containingModule 要生成的模块
+		 * @param moduleDependency 引用的模块
+		 * @param module 要生成的模块
 		 * @param builder 当前的构建器对象
 		 */
-		modulePrepend?: string | ((module: Module, containingModule: Module, builder: Builder) => string)
+		modulePrepend?: string | ((moduleDependency: Module, module: Module, builder: Builder) => string)
 		/**
 		 * 在每个依赖模块末尾追加的内容，如果是字符串，则其中以下标记会被替换：
 		 * - `<path>`: 引用的模块的相对路径，等价于 `<dir>/<name><ext>`
@@ -565,13 +544,12 @@ export interface BundlerOptions {
 		 * - `<sha1>`: 引用的模块内容的 SHA-1 串（小写），默认截取前 8 位，如果要截取前 n 位，使用 `<sha1:n>`
 		 * - `<date>`: 当前时间，默认为用户本地可读格式，如果要自定义格式，使用如 `<date:yyyyMMdd>`
 		 * - `<random>`: 随机整数，默认为 8 位，如果要自定义为 n  位，使用如 `<random:n>`
-		 * - `<builder>`: 构建器的名字，默认为 `TPack`
 		 * - `<version>`: 构建器的版本号
-		 * @param module 引用的模块
-		 * @param containingModule 要生成的模块
+		 * @param moduleDependency 引用的模块
+		 * @param module 要生成的模块
 		 * @param builder 当前的构建器对象
 		 */
-		moduleAppend?: string | ((module: Module, containingModule: Module, builder: Builder) => string)
+		moduleAppend?: string | ((moduleDependency: Module, module: Module, builder: Builder) => string)
 		/**
 		 * 在每个依赖模块之间插入的代码
 		 * @default "\n\n"
@@ -588,4 +566,30 @@ export interface BundlerOptions {
 		 */
 		newLine?: string
 	}
+}
+
+/** 表示一个文本模块 */
+export interface TextModule extends Module {
+	/** 获取当前模块关联的文档 */
+	document: TextDocument
+}
+
+/** 表示一个由地址指定的依赖项 */
+export interface ModuleURLDependency extends ModuleDependency {
+	/** 依赖地址的协议部分 */
+	protocol?: string
+	/** 依赖地址是否包含双斜杠 */
+	slashes?: boolean
+	/** 依赖的用户名和密码部分 */
+	auth?: string
+	/** 依赖地址的主机和端口部分 */
+	host?: string
+	/** 依赖地址的路径部分 */
+	pathname?: string
+	/** 依赖地址的查询参数部分 */
+	search?: string
+	/** 依赖地址的查询参数对象 */
+	query?: { [name: string]: string | string[] }
+	/** 依赖地址的哈希值部分 */
+	hash?: string
 }

@@ -287,12 +287,12 @@ export namespace moduleTest {
 		export function unmodified() {
 			const module = new mod.Module("foo/entry.jsx", true)
 			module.content = "0123456"
-			const subfile = module.createSubmodule("sub.jsx", "3456", 3)
-			assert.strictEqual(subfile.addError({ index: 1 }).fileName, "foo/entry.jsx")
-			assert.strictEqual(subfile.addError({ index: 1 }).line, 0)
-			assert.strictEqual(subfile.addError({ index: 1 }).column, 4)
-			assert.strictEqual(subfile.addError({ index: 1, endIndex: 1 }).endLine, 0)
-			assert.strictEqual(subfile.addError({ index: 1, endIndex: 1 }).endColumn, 4)
+			const submodule = module.createSubmodule("sub.jsx", "3456", 3)
+			assert.strictEqual(submodule.addError({ index: 1 }).fileName, "foo/entry.jsx")
+			assert.strictEqual(submodule.addError({ index: 1 }).line, 0)
+			assert.strictEqual(submodule.addError({ index: 1 }).column, 4)
+			assert.strictEqual(submodule.addError({ index: 1, endIndex: 1 }).endLine, 0)
+			assert.strictEqual(submodule.addError({ index: 1, endIndex: 1 }).endColumn, 4)
 		}
 
 		export function sourceModified() {
@@ -303,13 +303,13 @@ export namespace moduleTest {
 			module.sourceMapBuilder = new SourceMapBuilder()
 			module.sourceMapBuilder.addMapping(0, 0, "source", 100, 100)
 
-			const subfile = module.createSubmodule("sub.jsx", "3456", 3)
-			assert.strictEqual(subfile.addError({ index: 1 }).fileName, "source")
-			assert.strictEqual(subfile.addError({ index: 1 }).line, 100)
-			assert.strictEqual(subfile.addError({ index: 1 }).column, 104)
+			const submodule = module.createSubmodule("sub.jsx", "3456", 3)
+			assert.strictEqual(submodule.addError({ index: 1 }).fileName, "source")
+			assert.strictEqual(submodule.addError({ index: 1 }).line, 100)
+			assert.strictEqual(submodule.addError({ index: 1 }).column, 104)
 
-			assert.strictEqual(subfile.addError({ line: 0, endLine: 0 }).column, undefined)
-			assert.strictEqual(subfile.addError({ index: 20 }).line, 100)
+			assert.strictEqual(submodule.addError({ line: 0, endLine: 0 }).column, undefined)
+			assert.strictEqual(submodule.addError({ index: 20 }).line, 100)
 		}
 
 		export function sourceModifiedWithoutSource() {
@@ -324,10 +324,10 @@ export namespace moduleTest {
 			assert.strictEqual(module.addError({ index: 1 }).line, 0)
 			assert.strictEqual(module.addError({ index: 1 }).column, 1)
 
-			const subfile = module.createSubmodule("sub.jsx", "3456", 3)
-			assert.strictEqual(subfile.addError({ index: 1 }).fileName, "foo/entry.jsx")
-			assert.strictEqual(subfile.addError({ index: 1 }).line, 0)
-			assert.strictEqual(subfile.addError({ index: 1 }).column, 4)
+			const submodule = module.createSubmodule("sub.jsx", "3456", 3)
+			assert.strictEqual(submodule.addError({ index: 1 }).fileName, "foo/entry.jsx")
+			assert.strictEqual(submodule.addError({ index: 1 }).line, 0)
+			assert.strictEqual(submodule.addError({ index: 1 }).column, 4)
 		}
 
 		export function sourceModifiedWithoutSourceMap() {
@@ -336,44 +336,44 @@ export namespace moduleTest {
 
 			module.content = "abcdefg"
 
-			const subfile = module.createSubmodule("sub.jsx", "3456", 3)
-			assert.strictEqual(subfile.addError({ index: 1 }).fileName, "foo/entry.jsx")
-			assert.strictEqual(subfile.addError({ index: 1 }).line, 0)
-			assert.strictEqual(subfile.addError({ index: 1 }).column, 4)
+			const submodule = module.createSubmodule("sub.jsx", "3456", 3)
+			assert.strictEqual(submodule.addError({ index: 1 }).fileName, "foo/entry.jsx")
+			assert.strictEqual(submodule.addError({ index: 1 }).line, 0)
+			assert.strictEqual(submodule.addError({ index: 1 }).column, 4)
 		}
 
 		export function childModified() {
 			const module = new mod.Module("foo/entry.jsx", true)
 			module.content = "0123456\n89"
 
-			const subfile = module.createSubmodule("sub.jsx", "3456", 3)
+			const submodule = module.createSubmodule("sub.jsx", "3456", 3)
 
-			subfile.content = "abcdefg"
-			subfile.sourceMapBuilder = new SourceMapBuilder()
-			subfile.sourceMapBuilder.addMapping(0, 0, "source", 100, 100)
-			subfile.sourceMapBuilder.addMapping(0, 4, "foo/entry.jsx", 200, 200)
+			submodule.content = "abcdefg"
+			submodule.sourceMapBuilder = new SourceMapBuilder()
+			submodule.sourceMapBuilder.addMapping(0, 0, "source", 100, 100)
+			submodule.sourceMapBuilder.addMapping(0, 4, "foo/entry.jsx", 200, 200)
 
-			assert.strictEqual(subfile.addError({ index: 1 }).fileName, "source")
-			assert.strictEqual(subfile.addError({ index: 1 }).line, 100)
-			assert.strictEqual(subfile.addError({ index: 1 }).column, 101)
+			assert.strictEqual(submodule.addError({ index: 1 }).fileName, "source")
+			assert.strictEqual(submodule.addError({ index: 1 }).line, 100)
+			assert.strictEqual(submodule.addError({ index: 1 }).column, 101)
 
-			assert.strictEqual(subfile.addError({ index: 0, endIndex: 0 }).fileName, "source")
-			assert.strictEqual(subfile.addError({ index: 0, endIndex: 0 }).line, 100)
-			assert.strictEqual(subfile.addError({ index: 0, endIndex: 0 }).column, 100)
+			assert.strictEqual(submodule.addError({ index: 0, endIndex: 0 }).fileName, "source")
+			assert.strictEqual(submodule.addError({ index: 0, endIndex: 0 }).line, 100)
+			assert.strictEqual(submodule.addError({ index: 0, endIndex: 0 }).column, 100)
 
-			assert.strictEqual(subfile.addError({ index: 5, endIndex: 8 }).fileName, "foo/entry.jsx")
-			assert.strictEqual(subfile.addError({ index: 5, endIndex: 8 }).line, 200)
-			assert.strictEqual(subfile.addError({ index: 5, endIndex: 8 }).column, 201)
+			assert.strictEqual(submodule.addError({ index: 5, endIndex: 8 }).fileName, "foo/entry.jsx")
+			assert.strictEqual(submodule.addError({ index: 5, endIndex: 8 }).line, 200)
+			assert.strictEqual(submodule.addError({ index: 5, endIndex: 8 }).column, 201)
 		}
 
 		export function childModifiedWithoutSourceMap() {
 			const module = new mod.Module("foo/entry.jsx", true)
 			module.content = "0123456"
-			const subfile = module.createSubmodule("sub.jsx", "3456", 3)
-			subfile.content = "abcdefg"
-			assert.strictEqual(subfile.addError({ index: 1 }).fileName, `foo/entry.jsx`)
-			assert.strictEqual(subfile.addError({ index: 1 }).line, 0)
-			assert.strictEqual(subfile.addError({ index: 1 }).column, 4)
+			const submodule = module.createSubmodule("sub.jsx", "3456", 3)
+			submodule.content = "abcdefg"
+			assert.strictEqual(submodule.addError({ index: 1 }).fileName, `foo/entry.jsx`)
+			assert.strictEqual(submodule.addError({ index: 1 }).line, 0)
+			assert.strictEqual(submodule.addError({ index: 1 }).column, 4)
 		}
 
 		export function bothModified() {
@@ -384,34 +384,34 @@ export namespace moduleTest {
 			module.sourceMapBuilder = new SourceMapBuilder()
 			module.sourceMapBuilder.addMapping(0, 0, "source1", 10, 10)
 
-			const subfile = module.createSubmodule("sub.jsx", "3456", 3)
+			const submodule = module.createSubmodule("sub.jsx", "3456", 3)
 
-			subfile.content = "abcdefg"
-			subfile.sourceMapBuilder = new SourceMapBuilder()
-			subfile.sourceMapBuilder.addMapping(0, 0, "source2", 100, 100)
-			subfile.sourceMapBuilder.addMapping(0, 4, "sub.jsx", 200, 200)
+			submodule.content = "abcdefg"
+			submodule.sourceMapBuilder = new SourceMapBuilder()
+			submodule.sourceMapBuilder.addMapping(0, 0, "source2", 100, 100)
+			submodule.sourceMapBuilder.addMapping(0, 4, "sub.jsx", 200, 200)
 
-			assert.strictEqual(subfile.addError({ index: 1 }).fileName, "source2")
-			assert.strictEqual(subfile.addError({ index: 1 }).line, 100)
-			assert.strictEqual(subfile.addError({ index: 1 }).column, 101)
+			assert.strictEqual(submodule.addError({ index: 1 }).fileName, "source2")
+			assert.strictEqual(submodule.addError({ index: 1 }).line, 100)
+			assert.strictEqual(submodule.addError({ index: 1 }).column, 101)
 
-			assert.strictEqual(subfile.addError({ index: 5 }).fileName, "sub.jsx")
-			assert.strictEqual(subfile.addError({ index: 5 }).line, 200)
-			assert.strictEqual(subfile.addError({ index: 5 }).column, 201)
-			assert.strictEqual(subfile.addError({ index: 5, endIndex: 5 }).endLine, 200)
-			assert.strictEqual(subfile.addError({ index: 5, endIndex: 5 }).endColumn, 201)
+			assert.strictEqual(submodule.addError({ index: 5 }).fileName, "sub.jsx")
+			assert.strictEqual(submodule.addError({ index: 5 }).line, 200)
+			assert.strictEqual(submodule.addError({ index: 5 }).column, 201)
+			assert.strictEqual(submodule.addError({ index: 5, endIndex: 5 }).endLine, 200)
+			assert.strictEqual(submodule.addError({ index: 5, endIndex: 5 }).endColumn, 201)
 
-			assert.strictEqual(subfile.addError({ index: 1, endIndex: 5 }).endLine, undefined)
-			assert.strictEqual(subfile.addError({ index: 1, endIndex: 5 }).endColumn, undefined)
+			assert.strictEqual(submodule.addError({ index: 1, endIndex: 5 }).endLine, undefined)
+			assert.strictEqual(submodule.addError({ index: 1, endIndex: 5 }).endColumn, undefined)
 		}
 
 		export function forbidon() {
 			const module = new mod.Module("foo/entry.jsx", true)
 			module.content = "0123456"
-			const subfile = module.createSubmodule("sub.jsx", "3456", 3)
-			assert.strictEqual(subfile.addError({ index: 5, content: subfile.content }).fileName, "foo/entry.jsx")
-			assert.strictEqual(subfile.addError({ index: 5, content: subfile.content }).line, 0)
-			assert.strictEqual(subfile.addError({ index: 5, content: subfile.content }).column, 8)
+			const submodule = module.createSubmodule("sub.jsx", "3456", 3)
+			assert.strictEqual(submodule.addError({ index: 5, content: submodule.content }).fileName, "foo/entry.jsx")
+			assert.strictEqual(submodule.addError({ index: 5, content: submodule.content }).line, 0)
+			assert.strictEqual(submodule.addError({ index: 5, content: submodule.content }).column, 8)
 		}
 
 	}

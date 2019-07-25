@@ -3,6 +3,9 @@ import { readFileSync } from "fs"
 /** 表示一个本地化服务 */
 export class LocaleService {
 
+	/** 获取当前本地语言的翻译字典 */
+	dict?: { [key: string]: string }
+
 	/** 当前的区域代码 */
 	private _currentLocale!: string
 
@@ -23,9 +26,6 @@ export class LocaleService {
 		}
 		this.dict = undefined
 	}
-
-	/** 获取当前本地语言的翻译字典 */
-	dict?: { [key: string]: string }
 
 	/** 判断当前是否使用默认语言服务 */
 	get isDefaultLocale() { return !this.dict }

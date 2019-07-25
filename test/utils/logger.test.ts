@@ -4,6 +4,18 @@ import { captureStdio } from "../helpers/consoleHelper"
 
 export namespace loggerTest {
 
+	export async function traceTest() {
+		await captureStdio((stdout, stderr) => {
+			const l = new logger.Logger()
+			l.trace("trace")
+			assert.strictEqual(stdout.join("\n"), "")
+
+			l.logLevel = logger.LogLevel.trace
+			l.trace("trace")
+			assert.strictEqual(stdout.join("\n").includes("trace"), true)
+		})
+	}
+
 	export async function debugTest() {
 		await captureStdio((stdout, stderr) => {
 			const l = new logger.Logger()
@@ -66,11 +78,10 @@ export namespace loggerTest {
 
 	export async function formatLogTest() {
 		const l = new logger.Logger()
-		l.formatLog({
-			icon: "icon",
+		assert.ok(l.formatLog({
 			source: "source",
 			message: "message",
-			error: new Error("error"),
+			stack: new Error("error").stack,
 			showStack: true,
 			fileName: "fileName",
 			content: "content",
@@ -79,23 +90,32 @@ export namespace loggerTest {
 			endLine: 3,
 			endColumn: 4,
 			detail: "detail"
-		})
+		}).includes("message"))
+
+		assert.ok(l.formatLog({
+			message: "message",
+			fileName: "fileName",
+			line: 1,
+			endLine: 3,
+		}, logger.LogLevel.success, false).includes("message"))
+
+		assert.strictEqual(l.formatLog({}), "")
+		assert.strictEqual(l.formatLog(""), "")
 	}
 
 	export async function taskTest() {
 		await captureStdio((stdout, stderr) => {
 			const l = new logger.Logger()
+			l.logLevel = logger.LogLevel.trace
 			l.end(l.begin("Current"))
 			assert.strictEqual(stdout.join("\n").includes("Current"), true)
 		})
 
 		await captureStdio((stdout, stderr) => {
 			const l = new logger.Logger()
-			l.progressPercent(10)
-			l.progressText("Current")
+			l.progressPercent = 10
+			l.showProgress("Current")
 			l.hideProgress()
-			assert.strictEqual(stdout.join("\n").includes("10"), true)
-			assert.strictEqual(stdout.join("\n").includes("Current"), true)
 		})
 	}
 

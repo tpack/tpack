@@ -88,4 +88,15 @@ export namespace lineColumnTest {
 		assert.deepStrictEqual(lineColumn.addLineColumn({ line: 1, column: 2 }, -1, 4), { line: 0, column: 4 })
 	}
 
+	export function compareLineColumnTest() {
+		assert.ok(lineColumn.compareLineColumn({ line: 1, column: 2 }, { line: 11, column: 4 }) < 0)
+
+		assert.ok(lineColumn.compareLineColumn({ line: 11, column: 4 }, { line: 1, column: 2 }) > 0)
+		assert.ok(lineColumn.compareLineColumn({ line: 11, column: 4 }, { line: 11, column: 2 }) > 0)
+		assert.ok(lineColumn.compareLineColumn({ line: 11, column: 2 }, { line: 11, column: 4 }) < 0)
+		assert.ok(lineColumn.compareLineColumn({ line: 1, column: 100 }, { line: 2, column: 0 }) < 0)
+		assert.ok(lineColumn.compareLineColumn({ line: 1, column: 2 }, { line: 1, column: 2 }) === 0)
+	}
+
+
 }

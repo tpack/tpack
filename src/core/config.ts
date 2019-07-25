@@ -1,7 +1,5 @@
-import { readFileSync } from "fs"
-import { extname, resolve, delimiter } from "path"
-import { transformESModuleToCommonJS } from "../utils/esm"
-import { stripBOM } from "../utils/misc"
+import { extname, resolve } from "path"
+import { registerESMLoader, unregisterESMLoader } from "../utils/require"
 
 /** 所有支持的文件扩展名 */
 export const extensions: { [ext: string]: string } = {
@@ -18,18 +16,11 @@ export const extensions: { [ext: string]: string } = {
  */
 export async function loadConfig(path: string, jsModule = true) {
 	path = resolve(path)
-	// HACK 将当前程序所在路径添加到依赖搜索目录
-	const globalDir = resolve(__dirname, "../../../")
-	const Module = require("module")
-	if (!Module._nodeModulePaths(path).includes(globalDir)) {
-		process.env.NODE_PATH = process.env.NODE_PATH ? `${process.env.NODE_PATH}${delimiter}${globalDir}` : globalDir
-		Module._initPaths()
-	}
 	const ext = extname(path).toLowerCase()
-	const originalLoader = require.extensions[ext]
 	const js = jsModule && ext === ".js"
+	let originalLoader: any
 	if (js) {
-		require.extensions[".js"] = (module: any, filename) => module._compile(transformESModuleToCommonJS(stripBOM(readFileSync(filename, "utf8"))), filename)
+		originalLoader = registerESMLoader()
 	} else if (!originalLoader) {
 		const loaderRegister = extensions[ext]
 		if (loaderRegister) {
@@ -40,7 +31,7 @@ export async function loadConfig(path: string, jsModule = true) {
 		return require(path)
 	} finally {
 		if (js) {
-			require.extensions[ext] = originalLoader
+			unregisterESMLoader(originalLoader)
 		}
 	}
 }

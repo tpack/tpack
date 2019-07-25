@@ -9,13 +9,15 @@ export default class TS extends Compiler implements Processor {
 	get outExt() { return ".js" }
 	get vendorName() { return "typescript" }
 	static parallel = true
-	compile(module: Module, options: any, ts: any, builder: Builder) {
+	process(module: Module, options: any, builder: Builder): any {
 		// 忽略 .d.ts 文件
-		if (/\.d\.ts$/i.test(module.originalPath)) {
-			module.content = ""
+		if (/\.d\.ts$/i.test(module.path)) {
 			return
 		}
-		// 设置默认值
+		module.setProp("jsx", /x$/i.test(module.path))
+		return super.process(module, options, builder)
+	}
+	compile(module: Module, options: any, ts: any, builder: Builder) {
 		if (typeof options === "string") {
 			options = require(resolve(options)).compilerOptions
 		}
@@ -25,13 +27,16 @@ export default class TS extends Compiler implements Processor {
 				charset: builder.encoding,
 				experimentalDecorators: true,
 				newLine: "LF",
-				jsx: /x$/i.test(module.originalPath) ? 2/*React*/ : 1/*Preserve*/
+				jsx: module.getProp("jsx") ? 2/*React*/ : 1/*Preserve*/
 			}, options),
 			fileName: module.originalPath,
 			reportDiagnostics: true
 		}
+		// todo:  jsx
+		// if (options.compilerOptions.jsx === 2 && !options.fileName.endsWith("jsx") && !options.fileName.endsWith("tsx")) {
+		// 	options.fileName += ".tsx"
+		// }
 		delete options.compilerOptions.outDir
-
 		const result = ts.transpileModule(module.content, options)
 		if (result.sourceMapText) {
 			// TS 未提供 API 以删除 # sourceMappingURL，手动删除之。

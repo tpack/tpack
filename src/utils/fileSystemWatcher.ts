@@ -1,7 +1,7 @@
 import { EventEmitter } from "events"
 import { FSWatcher, readdir, stat, Stats, unwatchFile, watch, watchFile } from "fs"
-import { join, normalize } from "path"
-import { containsPath } from "./path"
+import { Matcher, Pattern } from "./matcher"
+import { containsPath, getExt, joinPath, normalizePath } from "./path"
 
 /**
  * 表示一个文件系统监听器
@@ -48,10 +48,8 @@ export class FileSystemWatcher extends EventEmitter {
 			if (options.persistent !== undefined) {
 				this.watchOptions.persistent = options.persistent
 			}
-			if (options.ignored !== undefined) {
-				this.ignored = options.ignored
-			}
 		}
+		this.ignoreMatcher = new Matcher(options && options.ignore !== undefined ? options.ignore : [".DS_Store", "Desktop.ini", "Thumbs.db", "ehthumbs.db", "*~", "*.tmp", ".git", ".vs"])
 	}
 
 	/** 所有原生监听器对象，键为监听的路径，值为原生监听器对象 */
@@ -62,21 +60,20 @@ export class FileSystemWatcher extends EventEmitter {
 	 * @param path 要添加的文件或文件夹路径
 	 * @param callback 添加完成的回调函数，在回调执行前无法监听到文件的修改
 	 * @param callback.error 如果添加成功则为空，否则为错误对象
-	 * @param callback.success 是否已创建新的监听器
 	 */
-	add(path: string, callback?: (error: NodeJS.ErrnoException | null, success: boolean) => void) {
-		path = normalize(path)
-		if (path === ".") path = ""
+	add(path: string, callback?: (error: NodeJS.ErrnoException | null) => void) {
+		path = normalizePath(path)
+		// 不重复监听相同路径
 		if (this._watchers.has(path)) {
-			callback && callback(null, false)
-			return
+			callback && callback(null)
+			return false
 		}
 		if (this.watchOptions.recursive) {
 			for (const key of this._watchers.keys()) {
 				// 如果已监听父文件夹，则忽略当前路径
 				if (containsPath(key, path)) {
-					callback && callback(null, false)
-					return
+					callback && callback(null)
+					return false
 				}
 				// 如果已监听子文件或文件夹，则替换之
 				if (containsPath(path, key)) {
@@ -84,7 +81,13 @@ export class FileSystemWatcher extends EventEmitter {
 				}
 			}
 		}
-		this._createWatcher(path, callback, true)
+		try {
+			this._createWatcher(path, true, callback)
+		} catch (e) {
+			callback && callback(e)
+			return false
+		}
+		return true
 	}
 
 	/** 判断是否强制使用轮询监听，轮询监听可以支持更多的文件系统，但会占用大量 CPU */
@@ -97,40 +100,28 @@ export class FileSystemWatcher extends EventEmitter {
 		/** 是否使用原生的递归监听支持 */
 		recursive: process.platform === "win32" || process.platform === "darwin",
 		/** 轮询的间隔毫秒数 */
-		interval: 2500,
+		interval: 500,
 	}
 
 	/**
 	 * 创建指定路径的原生监听器
 	 * @param path 要监听的文件或文件夹路径
+	 * @param initStats 是否初始化路径对应的状态
 	 * @param callback 创建完成的回调函数，在回调执行前无法监听到文件的修改
 	 * @param callback.error 如果创建成功则为空，否则为相关的错误
-	 * @param callback.success 是否已创建新的监听器
-	 * @param initStats 是否初始化路径对应的状态
-	 * @returns 返回添加的监听器，如果无法添加则返回空
+	 * @returns 返回监听器
 	 */
-	private _createWatcher(path: string, callback?: (error: NodeJS.ErrnoException | null, success: boolean) => void, initStats?: boolean) {
-		// 创建原生监听器
-		let watcher: FSWatcher
-		try {
-			watcher = watch(path || ".", this.watchOptions)
-		} catch (e) {
-			callback && callback(e, false)
-			return
-		}
+	private _createWatcher(path: string, initStats?: boolean, callback?: (error: NodeJS.ErrnoException | null) => void) {
+		const watcher = watch(path || ".", this.watchOptions).on("error", (error: NodeJS.ErrnoException) => {
+			// Windows 下删除监听的空根文件夹引发 EPERM 错误
+			if (error.code === "EPERM" && process.platform === "win32" && (error as any).filename === null) {
+				return
+			}
+			this.onError(error, path)
+		})
 		this._watchers.set(path, watcher)
-		// fs.watch 可能在调用时立即执行一次 onChange，等待文件夹状态添加后绑定事件
-		const initWatcher = (error: NodeJS.ErrnoException | null) => {
-			watcher.on("error", (error: NodeJS.ErrnoException) => {
-				// Windows 下删除监听的空根文件夹引发 EPERM 错误
-				if (error.code === "EPERM" && process.platform === "win32" && (error as any).filename === null) {
-					const entries = this._stats.get(path)
-					if (typeof entries === "object" && entries.length === 0) {
-						return
-					}
-				}
-				this.onError(error, path)
-			}).on("change", typeof this._stats.get(path) === "number" ? () => {
+		const initWatcher = () => {
+			watcher.on("change", typeof this._stats.get(path) === "number" ? () => {
 				this.handleWatchChange(path)
 			} : (event, fileName) => {
 				// `event` 的值可能是 `rename` 或 `change`，`rename` 指创建、删除或重命名文件，`change` 指修改文件内容
@@ -139,50 +130,47 @@ export class FileSystemWatcher extends EventEmitter {
 				// 官方文档中描述 `fileName` 可能为空，但在 Node 10.12+ 中，Windows/MacOS/Linux/AIX 下 `fileName` 不可能为空
 				// https://github.com/nodejs/node/blob/master/test/parallel/test-fs-watch.js
 				if (fileName) {
-					this.handleWatchChange(join(path, fileName as string))
+					this.handleWatchChange(joinPath(path, fileName as string))
 				} else {
 					this.handleWatchChange(path)
 				}
 			})
-			callback && callback(error, true)
+			callback && callback(null)
 		}
 		if (initStats) {
-			this._initStats(path, false, initWatcher)
+			this._initStats(path, getExt(path).length > 0, initWatcher)
 		} else {
-			initWatcher(null)
+			initWatcher()
 		}
+		return watcher
 	}
 
 	/**
 	 * 创建指定路径的轮询监听器
 	 * @param path 要监听的文件或文件夹路径
+	 * @param initStats 是否初始化路径对应的状态
 	 * @param callback 创建完成的回调函数，在回调执行前无法监听到文件的修改
 	 * @param callback.error 如果创建成功则为空，否则为相关的错误
-	 * @param callback.success 是否已创建新的监听器
-	 * @param initStats 是否添加路径对应的状态
-	 * @returns 返回添加的监听器，如果无法添加则返回空
+	 * @returns 返回监听器
 	 */
-	private _createPollingWatcher(path: string, callback?: (error: NodeJS.ErrnoException | null, success: boolean) => void, initStats?: boolean) {
-		const handleChange = (stats: Stats, prevStats: Stats) => {
+	private _createPollingWatcher(path: string, initStats?: boolean, callback?: (error: NodeJS.ErrnoException | null) => void) {
+		const watcher: any = (stats: Stats, prevStats: Stats) => {
 			// 理论上可以直接使用 stats，避免重新执行 fs.stat，但 usePolling 不常用且本身有性能问题，为简化程序，忽略 stats
 			if (stats.size !== prevStats.size || stats.mtimeMs !== prevStats.mtimeMs || stats.mtimeMs === 0) {
 				this.handleWatchChange(path)
 			}
 		}
-		watchFile(path, this.watchOptions, handleChange)
-		const watcher = {
-			close() {
-				unwatchFile(path, handleChange)
-			}
-		} as any as FSWatcher
+		watcher.close = () => {
+			unwatchFile(path, watcher)
+		}
+		watchFile(path, this.watchOptions, watcher)
 		this._watchers.set(path, watcher)
 		if (initStats) {
-			this._initStats(path, false, error => {
-				callback && callback(error, true)
-			})
+			this._initStats(path, getExt(path).length > 0, callback)
 		} else {
-			callback && callback(null, true)
+			callback && callback(null)
 		}
+		return watcher
 	}
 
 	/**
@@ -202,23 +190,23 @@ export class FileSystemWatcher extends EventEmitter {
 	 * @param callback 已添加完成的回调函数
 	 * @param depth 遍历的深度
 	 */
-	private _initStats(path: string, isFile: boolean, callback: (error: NodeJS.ErrnoException | null) => void) {
+	private _initStats(path: string, isFile: boolean, callback?: (error: NodeJS.ErrnoException | null) => void) {
 		this._pending++
 		if (isFile) {
 			stat(path, (error, stats) => {
 				if (error) {
-					callback(error)
+					callback && callback(error)
 				} else if (stats.isFile()) {
 					this._stats.set(path, stats.mtimeMs)
 					if (this.usePolling && this.isWatching && !this._watchers.has(path)) {
 						this._createPollingWatcher(path)
 					}
-					callback(null)
+					callback && callback(null)
 				} else if (stats.isDirectory()) {
 					this._initStats(path, false, callback)
 				}
 				if (--this._pending === 0) {
-					this.emit("ready")
+					this._emitInitReady(path)
 				}
 			})
 		} else {
@@ -231,21 +219,25 @@ export class FileSystemWatcher extends EventEmitter {
 						setTimeout(() => {
 							this._initStats(path, false, callback)
 							if (--this._pending === 0) {
-								this.emit("ready")
+								this._emitInitReady(path)
 							}
 						}, this.delay)
 					} else {
-						callback(error)
+						callback && callback(error)
 					}
 				} else {
 					this._stats.set(path, entries)
+					let firstError: NodeJS.ErrnoException | null = null
 					if (!this.watchOptions.recursive && this.isWatching && !this._watchers.has(path)) {
-						this._createWatcher(path)
+						try {
+							this._createWatcher(path)
+						} catch (e) {
+							firstError = e
+						}
 					}
 					let pending = 0
-					let firstError: NodeJS.ErrnoException | null = null
 					for (const entry of entries) {
-						const child = join(path, entry)
+						const child = joinPath(path, entry)
 						if (this.ignored(child)) {
 							continue
 						}
@@ -255,27 +247,39 @@ export class FileSystemWatcher extends EventEmitter {
 								firstError = error
 							}
 							if (--pending === 0) {
-								callback(firstError)
+								callback && callback(firstError)
 							}
 						})
 					}
 					if (pending === 0) {
-						callback(firstError)
+						callback && callback(firstError)
 					}
 				}
 				if (--this._pending === 0) {
-					this.emit("ready")
+					this._emitInitReady(path)
 				}
 			})
 		}
 	}
+
+	/** 初始化完成 */
+	private _emitInitReady(path: string) {
+		if (this._pendingUpdates.size) {
+			this._emitUpdates()
+		} else {
+			this.onReady()
+		}
+	}
+
+	/** 忽略匹配器 */
+	readonly ignoreMatcher: Matcher
 
 	/**
 	 * 判断是否忽略指定的路径
 	 * @param path 要判断的文件或文件夹路径，路径的分隔符同操作系统
 	 */
 	ignored(path: string) {
-		return /[\\\/](?:\.DS_Store|\.git|Desktop\.ini|Thumbs\.db|ehthumbs\.db)$|~$/.test(path)
+		return this.ignoreMatcher.test(path)
 	}
 
 	/**
@@ -295,8 +299,7 @@ export class FileSystemWatcher extends EventEmitter {
 	 * @param path 要判断的路径
 	 */
 	isWatchingPath(path: string) {
-		path = normalize(path)
-		if (path === ".") path = ""
+		path = normalizePath(path)
 		for (const key of this._watchers.keys()) {
 			if (containsPath(key, path)) {
 				return true
@@ -316,24 +319,22 @@ export class FileSystemWatcher extends EventEmitter {
 	 * 移除指定路径的监听器
 	 * @param path 要移除的文件或文件夹路径
 	 * @param callback 移除完成后的回调函数
-	 * @param callback.success 如果成功移除监听器则为 `true`，如果存在更上级的监听器，则为 `false`
 	 * @description 注意如果已监听路径所在的文件夹，移除操作将无效
 	 */
-	remove(path: string, callback?: (success: boolean) => void) {
-		path = normalize(path)
-		if (path === ".") path = ""
+	remove(path: string, callback?: () => void) {
+		path = normalizePath(path)
 		if (this.watchOptions.recursive) {
 			this._deleteWatcher(path)
 			if (this.isWatchingPath(path)) {
-				callback && callback(false)
-				return
+				callback && callback()
+				return false
 			}
 		} else {
 			// 如果存在根监听器，不允许删除
 			for (const key of this._watchers.keys()) {
 				if (containsPath(key, path) && key !== path) {
-					callback && callback(false)
-					return
+					callback && callback()
+					return false
 				}
 			}
 			// 删除当前监听器和子监听器
@@ -350,8 +351,9 @@ export class FileSystemWatcher extends EventEmitter {
 					this._stats.delete(key)
 				}
 			}
-			callback && callback(true)
+			callback && callback()
 		})
+		return true
 	}
 
 	/**
@@ -375,9 +377,9 @@ export class FileSystemWatcher extends EventEmitter {
 		for (const key of this._watchers.keys()) {
 			this._deleteWatcher(key)
 		}
-		if (this._resolveUpdatesTimer) {
-			clearTimeout(this._resolveUpdatesTimer)
-			this._resolveUpdatesTimer = undefined
+		if (this._emitUpdatesTimer) {
+			clearTimeout(this._emitUpdatesTimer)
+			this._emitUpdatesTimer = undefined
 		}
 		this.ready(() => {
 			this._stats.clear()
@@ -389,14 +391,35 @@ export class FileSystemWatcher extends EventEmitter {
 
 	// #region 更新
 
-	/** 暂存所有已更新的文件或文件夹，确保短时间内不重复触发事件 */
+	/** 暂停更新的次数 */
+	private _pauseCount = 0
+
+	/** 暂停触发监听事件 */
+	pause() {
+		this._pauseCount++
+	}
+
+	/** 恢复触发监听事件 */
+	resume() {
+		if (--this._pauseCount === 0 && this._pendingUpdates.size) {
+			if (this._emitUpdatesTimer) {
+				return
+			}
+			this._emitUpdatesTimer = setTimeout(this._emitUpdates, this.delay)
+		}
+	}
+
+	/** 所有已更新但未处理的文件或文件夹路径 */
 	private _pendingUpdates = new Set<string>()
 
-	/** 等待解析暂存的更改的计时器 */
-	private _resolveUpdatesTimer?: ReturnType<typeof setTimeout>
+	/** 是否正在使用 _pendingUpdates */
+	private _pendingUpdatesLocked = false
+
+	/** 等待处理更新的计时器 */
+	private _emitUpdatesTimer?: ReturnType<typeof setTimeout>
 
 	/** 获取或设置监听延时回调的毫秒数 */
-	delay = 256
+	delay = 300
 
 	/** 判断或设置是否仅当文件的最后修改时间发生变化才触发更新 */
 	compareModifyTime = false
@@ -406,34 +429,36 @@ export class FileSystemWatcher extends EventEmitter {
 	 * @param path 更改的文件或文件夹路径
 	 */
 	protected handleWatchChange(path: string) {
+		// 如果用户明确不需要监听某些文件，在源头彻底忽略它们可以提升性能
 		if (this.ignored(path)) {
 			return
 		}
+		// 处理更新期间需要使用 _pendingUpdates，如果正在处理更新，需要申请新的 _pendingUpdates
+		if (this._pendingUpdatesLocked) {
+			this._pendingUpdates = new Set()
+			this._pendingUpdatesLocked = false
+		}
+		// 添加到列表
 		this._pendingUpdates.add(path)
-		if (this._resolveUpdatesTimer) {
+		if (this._emitUpdatesTimer || this._pending > 0 || this._pauseCount > 0) {
 			return
 		}
-		this._resolveUpdatesTimer = setTimeout(this._resolveUpdates, this.delay)
+		this._emitUpdatesTimer = setTimeout(this._emitUpdates, this.delay)
 	}
 
-	/** 解析所有已挂起的更改 */
-	private _resolveUpdates = () => {
-		this._resolveUpdatesTimer = undefined
+	/** 处理所有更新 */
+	private _emitUpdates = () => {
+		this._emitUpdatesTimer = undefined
+		// 实际更新到处理更新期间被暂停更新
+		if (this._pauseCount > 0) {
+			return
+		}
+		// 锁定 _pendingUpdates 避免在处理更新时被修改
+		this._pendingUpdatesLocked = true
 		const pendingUpdates = this._pendingUpdates
-		if (pendingUpdates.size > 1) {
-			// 如果有多个文件更新，需要传入更新列表以避免重复更新
-			for (const pendingChange of pendingUpdates) {
-				const stats = this._stats.get(pendingChange)
-				this._commitUpdate(pendingChange, stats === undefined ? pendingChange.includes(".") : typeof stats === "number", !this.compareModifyTime, pendingUpdates)
-			}
-			this._pendingUpdates = new Set()
-		} else {
-			// 如果只有一个文件更新，可复用 pendingUpdates 对象
-			for (const pendingChange of pendingUpdates) {
-				const stats = this._stats.get(pendingChange)
-				this._commitUpdate(pendingChange, stats === undefined ? pendingChange.includes(".") : typeof stats === "number", !this.compareModifyTime)
-			}
-			pendingUpdates.clear()
+		for (const pendingChange of pendingUpdates) {
+			const stats = this._stats.get(pendingChange)
+			this._emitUpdate(pendingChange, stats === undefined ? pendingChange.includes(".") : typeof stats === "number", !this.compareModifyTime, pendingUpdates)
 		}
 	}
 
@@ -444,14 +469,14 @@ export class FileSystemWatcher extends EventEmitter {
 	 * @param force 是否强制更新文件
 	 * @param pendingUpdates 本次同时更新的所有路径，提供此参数可避免重复更新
 	 */
-	private _commitUpdate(path: string, isFile: boolean, force: boolean, pendingUpdates?: Set<string>) {
+	private _emitUpdate(path: string, isFile: boolean, force: boolean, pendingUpdates: Set<string>) {
 		this._pending++
 		if (isFile) {
 			stat(path, (error, stats) => {
 				if (error) {
 					if (error.code === "ENOENT") {
 						// * -> 不存在
-						this._commitDelete(path, pendingUpdates)
+						this._emitDelete(path, pendingUpdates)
 					} else {
 						this.onError(error, path)
 					}
@@ -468,25 +493,25 @@ export class FileSystemWatcher extends EventEmitter {
 					} else {
 						// * -> 文件
 						if (prevStats !== undefined) {
-							this._commitDelete(path, pendingUpdates)
+							this._emitDelete(path, pendingUpdates)
 						}
 						// 轮询需要将每个文件加入监听
 						if (this.usePolling && this.isWatching && !this._watchers.has(path)) {
-							this._createPollingWatcher(path, e => {
-								if (e) {
-									this.onError(e, path)
-								}
-							})
+							try {
+								this._createPollingWatcher(path)
+							} catch (e) {
+								this.onError(e, path)
+							}
 						}
 						this._stats.set(path, newWriteTime)
 						this.onCreate(path, stats)
 					}
 				} else if (stats.isDirectory()) {
 					// * -> 文件夹
-					this._commitUpdate(path, false, force, pendingUpdates)
+					this._emitUpdate(path, false, force, pendingUpdates)
 				}
 				if (--this._pending === 0) {
-					this.emit("ready")
+					this._emitReady()
 				}
 			})
 		} else {
@@ -494,16 +519,16 @@ export class FileSystemWatcher extends EventEmitter {
 				if (error) {
 					if (error.code === "ENOENT") {
 						// * -> 不存在
-						this._commitDelete(path, pendingUpdates)
+						this._emitDelete(path, pendingUpdates)
 					} else if (error.code === "ENOTDIR" || error.code === "EEXIST") {
 						// * -> 文件
-						this._commitUpdate(path, true, force, pendingUpdates)
+						this._emitUpdate(path, true, force, pendingUpdates)
 					} else if (error.code === "EMFILE" || error.code === "ENFILE") {
 						this._pending++
 						setTimeout(() => {
-							this._commitUpdate(path, isFile, force, pendingUpdates)
+							this._emitUpdate(path, isFile, force, pendingUpdates)
 							if (--this._pending === 0) {
-								this.emit("ready")
+								this._emitReady()
 							}
 						}, this.delay)
 					} else {
@@ -518,7 +543,7 @@ export class FileSystemWatcher extends EventEmitter {
 							if (entries.includes(entry)) {
 								continue
 							}
-							this._commitDelete(join(path, entry), pendingUpdates)
+							this._emitDelete(joinPath(path, entry), pendingUpdates)
 						}
 						// 轮询模式需手动查找新增的文件
 						if (this.usePolling) {
@@ -526,41 +551,41 @@ export class FileSystemWatcher extends EventEmitter {
 								if ((prevStats as string[]).includes(entry)) {
 									continue
 								}
-								const child = join(path, entry)
+								const child = joinPath(path, entry)
 								if (this.ignored(child)) {
 									continue
 								}
-								this._commitUpdate(child, entry.includes(".", 1), false, pendingUpdates)
+								this._emitUpdate(child, entry.includes(".", 1), false, pendingUpdates)
 							}
 						}
 						// 其它情况无需处理文件夹的修改事件，如果文件被修改或新文件创建，将会触发相应文件的事件
 					} else {
 						// * -> 文件夹
 						if (prevStats !== undefined) {
-							this._commitDelete(path)
+							this._emitDelete(path, pendingUpdates)
 						}
 						// 非递归模式需要将每个文件夹加入监听
-						if (!this.watchOptions.recursive && this.isWatching && !this._watchers.has(path)) {
-							this._createWatcher(path, e => {
-								if (e) {
-									this.onError(e, path)
-								}
-							})
-						}
 						this._stats.set(path, entries)
+						if (!this.watchOptions.recursive && this.isWatching && !this._watchers.has(path)) {
+							try {
+								this._createWatcher(path)
+							} catch (e) {
+								this.onError(e, path)
+							}
+						}
 						this.onCreateDir(path, entries)
 						for (const entry of entries) {
-							const child = join(path, entry)
-							if (this.ignored(child) || pendingUpdates && pendingUpdates.has(child)) {
+							const child = joinPath(path, entry)
+							if (this.ignored(child) || pendingUpdates.has(child)) {
 								continue
 							}
 							const childStats = this._stats.get(child)
-							this._commitUpdate(child, childStats !== undefined ? typeof childStats === "number" : entry.includes(".", 1), false, pendingUpdates)
+							this._emitUpdate(child, childStats !== undefined ? typeof childStats === "number" : entry.includes(".", 1), false, pendingUpdates)
 						}
 					}
 				}
 				if (--this._pending === 0) {
-					this.emit("ready")
+					this._emitReady()
 				}
 			})
 		}
@@ -571,7 +596,7 @@ export class FileSystemWatcher extends EventEmitter {
 	 * @param path 要删除的文件或文件夹路径
 	 * @param pendingUpdates 本次同时更新的所有路径，提供此参数可避免重复更新
 	 */
-	private _commitDelete(path: string, pendingUpdates?: Set<string>) {
+	private _emitDelete(path: string, pendingUpdates: Set<string>) {
 		// 不处理未添加的路径
 		const prevStats = this._stats.get(path)
 		if (prevStats === undefined) {
@@ -584,13 +609,25 @@ export class FileSystemWatcher extends EventEmitter {
 			this.onDelete(path, prevStats)
 		} else {
 			for (const entry of prevStats as string[]) {
-				const child = join(path, entry)
-				if (pendingUpdates && pendingUpdates.has(child)) {
+				const child = joinPath(path, entry)
+				if (pendingUpdates.has(child)) {
 					continue
 				}
-				this._commitDelete(child, pendingUpdates)
+				this._emitDelete(child, pendingUpdates)
 			}
 			this.onDeleteDir(path, prevStats as string[])
+		}
+	}
+
+	/** 触发 ready 事件 */
+	private _emitReady() {
+		// 如果锁被解开，说明更新期间又有新的改动
+		if (this._pendingUpdatesLocked) {
+			this._pendingUpdates.clear()
+			this._pendingUpdatesLocked = false
+			this.onReady()
+		} else {
+			this._emitUpdates()
 		}
 	}
 
@@ -630,12 +667,19 @@ export class FileSystemWatcher extends EventEmitter {
 	 */
 	protected onDelete(path: string, prevWriteTime: number) { this.emit("delete", path, prevWriteTime) }
 
+	/** 当所有异步任务完成后执行 */
+	protected onReady() { this.emit("ready") }
+
 	/**
 	 * 当监听发生错误后执行
 	 * @param error 相关的错误对象
 	 * @param path 原始监听的路径
 	 */
-	protected onError(error: NodeJS.ErrnoException, path: string) { this.emit("error", error, path) }
+	protected onError(error: NodeJS.ErrnoException, path: string) {
+		if (this.listenerCount("error")) {
+			this.emit("error", error, path)
+		}
+	}
 
 	// #endregion
 
@@ -665,8 +709,8 @@ export interface FileSystemWatcherOptions {
 	 */
 	interval?: number
 	/**
-	 * 判断是否忽略指定的路径
-	 * @param path 要判断的文件或文件夹路径
+	 * 指定监听时忽略哪些文件，可以是通配符或正则表达式
+	 * @default [".DS_Store", "Desktop.ini", "Thumbs.db", "ehthumbs.db", "*~", "*.tmp", ".git", ".vs"]
 	 */
-	ignored?: (path: string) => boolean
+	ignore?: Pattern
 }

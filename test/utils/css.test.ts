@@ -149,6 +149,14 @@ export namespace cssTest {
 		assert.strictEqual(css.quoteCSSString("abc\""), `"abc\\""`)
 		assert.strictEqual(css.quoteCSSString("abc", '"'), `"abc"`)
 		assert.strictEqual(css.quoteCSSString("abc", '\''), `'abc'`)
+
+		assert.strictEqual(css.quoteCSSString("\uFFFD"), "\uFFFD")
+		assert.strictEqual(css.quoteCSSString("a\uFFFD"), "a\uFFFD")
+		assert.strictEqual(css.quoteCSSString("\uFFFDb"), "\uFFFDb")
+		assert.strictEqual(css.quoteCSSString("a\uFFFDb"), "a\uFFFDb")
+
+		assert.strictEqual(css.quoteCSSString("\x01\x02\x1E\x1F"), "\\1 \\2 \\1e \\1f ")
+		assert.strictEqual(css.quoteCSSString("\\"), "\\\\")
 	}
 
 	export function unquoteCSSStringTest() {

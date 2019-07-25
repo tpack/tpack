@@ -260,7 +260,7 @@ export class WorkerPool {
 }
 
 /** 表示一个线程池的选项 */
-export interface WorkerPoolOptions extends Pick<WorkerOptions, Exclude<keyof WorkerOptions, "eval">> {
+export interface WorkerPoolOptions extends Omit<WorkerOptions, "eval"> {
 	/**
 	 * 最大允许同时执行的线程数, 如果为 0 表示不启用多线程
 	 * @default Math.ceil(require("os").cpus().length / 2)

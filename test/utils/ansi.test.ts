@@ -37,9 +37,6 @@ export namespace ansiTest {
 		assert.strictEqual(ansi.truncateString("I'm a long long long text", "…", 10), "I'm …text")
 
 		assert.strictEqual(ansi.truncateString("ABCDEFG"), "ABCDEFG")
-		assert.strictEqual(ansi.truncateString("ABCDEFG", undefined, 1), "")
-		assert.strictEqual(ansi.truncateString("ABCDEFG", undefined, 2), ".")
-		assert.strictEqual(ansi.truncateString("ABCDEFG", undefined, 3), "..")
 		assert.strictEqual(ansi.truncateString("ABCDEFG", undefined, 4), "...")
 		assert.strictEqual(ansi.truncateString("ABCDEFG", undefined, 5), "A...")
 		assert.strictEqual(ansi.truncateString("ABCDEFG", undefined, 6), "A...G")

@@ -216,10 +216,8 @@ export namespace fileSystemWatcherTest {
 			const watcher = new fileSystemWatcher.FileSystemWatcher()
 			watcher.add(rootDir, () => {
 				assert.strictEqual(watcher.isWatching, true)
-				watcher.remove(resolvePath("foo"), success => {
-					assert.strictEqual(success, false)
-					watcher.remove(rootDir, success => {
-						assert.strictEqual(success, true)
+				watcher.remove(resolvePath("foo"), () => {
+					watcher.remove(rootDir, () => {
 						assert.strictEqual(watcher.isWatching, false)
 						watcher.remove("404", () => {
 							assert.strictEqual(watcher.isWatching, false)
@@ -233,12 +231,61 @@ export namespace fileSystemWatcherTest {
 
 	export async function ignoredTest() {
 		await new Promise(resolve => {
-			const watcher = new fileSystemWatcher.FileSystemWatcher({ delay: 10, persistent: false, ignored: () => true })
+			const watcher = new fileSystemWatcher.FileSystemWatcher({ delay: 10, persistent: false })
+			watcher.ignored = () => true
 			watcher.on("create", path => { assert.fail(path) })
 			watcher.add(".", () => {
 				fs.mkdirSync("foo/")
 				fs.writeFileSync("foo/你好.txt", "A")
 				watcher.close(resolve)
+			})
+		})
+	}
+
+	export async function pauseTest() {
+		await new Promise(async resolve => {
+			const watcher = new fileSystemWatcher.FileSystemWatcher({ delay: 10 })
+			let paused = true
+			watcher.on("create", path => {
+				assert.strictEqual(path, resolvePath("foo/created.txt"))
+				assert.strictEqual(paused, false)
+				watcher.close(resolve)
+			})
+			watcher.on("delete", path => { assert.fail(path) })
+			watcher.add(rootDir, () => {
+				fs.mkdirSync("foo/")
+				fs.writeFileSync("foo/created.txt", "A")
+			})
+			watcher.pause()
+			await new Promise(r => setTimeout(r, 60))
+			watcher.pause()
+			paused = false
+			watcher.resume()
+			watcher.resume()
+			watcher.pause()
+			watcher.resume()
+		})
+	}
+
+	export async function readyTest() {
+		await new Promise(async resolve => {
+			const watcher = new fileSystemWatcher.FileSystemWatcher({ delay: 10 })
+			const paths: string[] = []
+			watcher.on("create", path => {
+				paths.push(path)
+			})
+			watcher.on("ready", () => {
+				if (paths.length === 2) {
+					paths.sort()
+					assert.strictEqual(paths[0], resolvePath("foo/ready-1.txt"))
+					assert.strictEqual(paths[1], resolvePath("foo/ready-2.txt"))
+					watcher.close(resolve)
+				}
+			})
+			watcher.add(rootDir, () => {
+				fs.mkdirSync("foo/")
+				fs.writeFileSync("foo/ready-1.txt", "A")
+				fs.writeFileSync("foo/ready-2.txt", "A")
 			})
 		})
 	}

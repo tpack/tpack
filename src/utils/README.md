@@ -68,7 +68,6 @@ const fs = require("tutils/fileSystemSync")
 	- [js](#js)：JS 编码和解码
 	- [json](#json)：JSON 编码和解码
 	- [css](#css)：CSS 编码和解码
-	- [esm](#esm)：ES6 模块代码转 CommonJS
 - 生成代码
 	- [lineColumn](#linecolumn)：行列号和索引换算
 	- [sourceMap](#sourcemap)：读写源映射（Source Map）
@@ -79,6 +78,7 @@ const fs = require("tutils/fileSystemSync")
 	- [deferred](#deferred)：同时等待多个异步任务
 	- [eventEmitter](#eventemitter)：支持异步的事件触发器
 - 其它
+	- [require](#require)：Node require 定制
 	- [misc](#misc)：其它语言级别的工具函数，比如格式化日期
 
 ### 文件操作
@@ -424,15 +424,6 @@ npm 组件名                  | TUtils 对应的组件函数
 ----------------------------|----------------------------------------
 `cssesc`                    | `encodeCSS`
 
-#### esm
-```js
-const { transformESModuleToCommonJS } = require("tutils/esm")
-```
-
-npm 组件名                  | TUtils 对应的组件函数
-----------------------------|----------------------------------------
-`esm`                       | `transformESModuleToCommonJS`
-
 ### 生成代码
 
 #### lineColumn
@@ -536,6 +527,19 @@ npm 组件名                  | TUtils 对应的组件函数
 `tappable`                  | `EventEmitter`
 
 ### 其它
+
+#### require
+```js
+const { registerESMLoader } = require("tutils/require")
+
+registerESMLoader()
+require("./esm.js")
+```
+
+npm 组件名                  | TUtils 对应的组件函数
+----------------------------|----------------------------------------
+`esm`                       | `registerESMLoader`
+`require-global`            | `addGlobalPath`
 
 #### misc
 ```js

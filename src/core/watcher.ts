@@ -1,12 +1,12 @@
 import { Stats } from "fs"
 import { ANSIColor, color, formatTree } from "../utils/ansi"
 import { FileSystemWatcher, FileSystemWatcherOptions } from "../utils/fileSystemWatcher"
-import { Matcher, Pattern } from "../utils/matcher"
 import { formatDate } from "../utils/misc"
 import { getDir } from "../utils/path"
 import { Builder } from "./builder"
 import { i18n } from "./i18n"
 import { Module, ModuleDependencyType, ModuleState } from "./module"
+import { LogLevel } from "../utils/logger";
 
 /** 表示一个文件监听器 */
 export class Watcher extends FileSystemWatcher {
@@ -24,7 +24,6 @@ export class Watcher extends FileSystemWatcher {
 	constructor(builder: Builder, options?: WatcherOptions) {
 		super(options)
 		this.builder = builder
-		this.ignoreMatcher = builder.createMatcher(options && options.ignore !== undefined ? options.ignore : [".DS_Store", ".git", "Desktop.ini", "Thumbs.db", "ehthumbs.db", "*~"])
 	}
 
 	// #endregion
@@ -67,11 +66,6 @@ export class Watcher extends FileSystemWatcher {
 			this.builder.logger.info(`${color(i18n`Stopped watching`, ANSIColor.brightYellow)} ${this.builder.logger.formatPath(this.builder.rootDir)}`, true)
 		}
 	}
-
-	/** 忽略匹配器 */
-	readonly ignoreMatcher: Matcher
-
-	ignored(path: string) { return this.ignoreMatcher.test(path) }
 
 	protected onError(e: NodeJS.ErrnoException, path: string) {
 		super.onError(e, path)
@@ -160,16 +154,25 @@ export class Watcher extends FileSystemWatcher {
 	// #region 增量构建
 
 	protected onCreate(path: string, stats: Stats) {
+		if (this.builder.logger.logLevel === LogLevel.debug) {
+			this.builder.logger.debug(`${color(i18n`Created`, ANSIColor.brightBlue)} ${this.builder.logger.formatPath(path)}`)
+		}
 		super.onCreate(path, stats)
 		this.update(path, UpdateType.create)
 	}
 
 	protected onChange(path: string, stats: Stats, lastWriteTime: number) {
+		if (this.builder.logger.logLevel === LogLevel.debug) {
+			this.builder.logger.debug(`${color(i18n`Changed`, ANSIColor.brightCyan)} ${this.builder.logger.formatPath(path)}`)
+		}
 		super.onChange(path, stats, lastWriteTime)
 		this.update(path, UpdateType.change)
 	}
 
 	protected onDelete(path: string, lastWriteTime: number) {
+		if (this.builder.logger.logLevel === LogLevel.debug) {
+			this.builder.logger.debug(`${color(i18n`Deleted`, ANSIColor.brightYellow)} ${this.builder.logger.formatPath(path)}`)
+		}
 		super.onDelete(path, lastWriteTime)
 		this.update(path, UpdateType.delete)
 	}
@@ -400,11 +403,7 @@ export class Watcher extends FileSystemWatcher {
 
 /** 表示监听器的选项 */
 export interface WatcherOptions extends FileSystemWatcherOptions {
-	/**
-	 * 指定监听时忽略哪些文件，可以是通配符或正则表达式
-	 * @default [".DS_Store", ".git", "Desktop.ini", "Thumbs.db", "ehthumbs.db", "*~"]
-	 */
-	ignore?: Pattern
+
 }
 
 /** 表示文件的修改类型 */

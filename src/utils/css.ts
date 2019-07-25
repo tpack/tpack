@@ -43,8 +43,28 @@ export function decodeCSS(value: string) {
  * @param value 要编码的字符串
  * @param quote 要添加的引号，默认根据字符串自动推导
  */
-export function quoteCSSString(value: string, quote = /^[\w\.\-@:\/#+!\?%&|,;=]*$/.test(value) ? "" : '"') {
-	return `${quote}${quote && !value.includes(quote.charAt(0)) ? value : encodeCSS(value)}${quote}`
+export function quoteCSSString(value: string, quote = /[)'"]/.test(value) ? '"' : "") {
+	let result = quote
+	for (let i = 0; i < value.length; i++) {
+		const char = value.charCodeAt(i)
+		if (char <= 0x001F || char === 0x007F) {
+			result += `\\${char.toString(16)} `
+			continue
+		}
+		switch (char) {
+			case 41 /*)*/:
+			case 34 /*"*/:
+			case 39 /*'*/:
+				result += quote && char !== quote.charCodeAt(0) ? value.charAt(i) : `\\${value.charAt(i)}`
+				continue
+			case 92 /*\*/:
+				result += `\\${value.charAt(i)}`
+				continue
+		}
+		result += value.charAt(i)
+	}
+	result += quote
+	return result
 }
 
 /**

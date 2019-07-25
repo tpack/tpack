@@ -285,7 +285,7 @@ async function main() {
 			description: "Print all outputs",
 			apply(options: BuilderOptions) {
 				const loggerOptions = options.logger || (options.logger = {})
-				loggerOptions.logLevel = LogLevel.debug
+				loggerOptions.logLevel = LogLevel.trace
 			}
 		},
 		"--colors": {
@@ -328,6 +328,12 @@ async function main() {
 			group: "Advanced Options",
 			argument: "locale",
 			description: "Specify the locale of messages, e.g. zh-CN"
+		},
+		"--no-install": {
+			description: "Disable install missing packages automaticly",
+			apply(options: BuilderOptions) {
+				options.installDependency = options.installDevDependency = false
+			}
 		},
 		"--no-es-module": {
 			description: "Disable ES6 Module support when loading configuration js file",

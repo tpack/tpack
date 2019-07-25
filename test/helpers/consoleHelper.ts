@@ -64,6 +64,7 @@ export async function captureStdio<T>(callback: (stdout: (string | Buffer | Uint
 /**
  * 模拟非 TTY 的输出流并执行函数
  * @param callback 要执行的函数
+ * @returns 返回函数的返回值
  */
 export async function simulateNoneTTYStream(callback: () => any | Promise<any>) {
 	const originalStdOutIsITY = process.stdout.isTTY

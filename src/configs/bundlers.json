@@ -1,6 +1,5 @@
 {
-	".js": "../bundlers/js",
-	".css": "../bundlers/css",
-	".html": "../bundlers/html",
-	".htm": ".html"
+	"text/javascript": "tpack/bundlers/js",
+	"text/css": "tpack/bundlers/css",
+	"text/html": "tpack/bundlers/html"
 }

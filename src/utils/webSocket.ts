@@ -727,7 +727,7 @@ export class WebSocket extends EventEmitter {
 }
 
 /** 表示一个 WebSocket 连接的附加选项 */
-export interface WebSocketOptions extends Pick<RequestOptions, Exclude<keyof RequestOptions, "protocol" | "hostname" | "host" | "port" | "auth" | "path">> {
+export interface WebSocketOptions extends Omit<RequestOptions, "protocol" | "hostname" | "host" | "port" | "auth" | "path"> {
 	/** WebSocket 扩展 */
 	extension?: WebSocketExtension
 	/**

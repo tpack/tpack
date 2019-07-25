@@ -91,24 +91,25 @@ export function formatDate(date: Date, format: string) {
  * @example formatHRTime([1, 20000000]) // "1.02s"
  */
 export function formatHRTime(hrTime: readonly [number, number]) {
-	let value: number
-	let unit: string
-	if (hrTime[0] < 1) {
-		if (hrTime[1] < 1e4) {
+	const second = hrTime[0]
+	if (second < 1) {
+		const ms = hrTime[1]
+		if (!ms) {
+			return "0ms"
+		}
+		if (ms < 1e4) {
 			return "<0.01ms"
 		}
-		value = hrTime[1] / 1e6
-		unit = "ms"
-	} else {
-		value = hrTime[0] + hrTime[1] / 1e9
-		if (value < 60) {
-			unit = "s"
-		} else {
-			value /= 60
-			unit = "min"
+		if (ms < 1e6) {
+			return `${(ms / 1e6).toFixed(2).replace(/\.00$|0$/, "")}ms`
 		}
+		return `${(ms / 1e6).toFixed(0)}ms`
 	}
-	return value.toFixed(2).replace(/\.00$|0$/, "") + unit
+	if (second < 60) {
+		return `${(second + hrTime[1] / 1e9).toFixed(2).replace(/\.00$|0$/, "")}s`
+	}
+	const s = second % 60
+	return `${Math.floor(second / 60)}min${s ? s + "s" : ""}`
 }
 
 /**

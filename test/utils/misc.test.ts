@@ -50,7 +50,7 @@ export namespace miscTest {
 	export function formatHRTimeTest() {
 		assert.strictEqual(misc.formatHRTime([1, 120000000]), "1.12s")
 
-		assert.strictEqual(misc.formatHRTime([0, 0]), "<0.01ms")
+		assert.strictEqual(misc.formatHRTime([0, 0]), "0ms")
 		assert.strictEqual(misc.formatHRTime([0, 1000]), "<0.01ms")
 		assert.strictEqual(misc.formatHRTime([0, 9999]), "<0.01ms")
 		assert.strictEqual(misc.formatHRTime([0, 10000]), "0.01ms")
@@ -68,10 +68,10 @@ export namespace miscTest {
 		assert.strictEqual(misc.formatHRTime([1, 999999999]), "2s")
 		assert.strictEqual(misc.formatHRTime([10, 0]), "10s")
 		assert.strictEqual(misc.formatHRTime([60, 100000000]), "1min")
-		assert.strictEqual(misc.formatHRTime([60, 999999999]), "1.02min")
+		assert.strictEqual(misc.formatHRTime([60, 999999999]), "1min")
 		assert.strictEqual(misc.formatHRTime([120, 100000000]), "2min")
-		assert.strictEqual(misc.formatHRTime([150, 100000000]), "2.5min")
-		assert.strictEqual(misc.formatHRTime([200, 100000000]), "3.33min")
+		assert.strictEqual(misc.formatHRTime([150, 100000000]), "2min30s")
+		assert.strictEqual(misc.formatHRTime([200, 100000000]), "3min20s")
 		assert.strictEqual(misc.formatHRTime([1500, 100000000]), "25min")
 		assert.strictEqual(misc.formatHRTime([15000, 100000000]), "250min")
 	}

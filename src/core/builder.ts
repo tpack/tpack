@@ -60,9 +60,11 @@ export class Builder extends EventEmitter {
 		this.rootDir = resolvePath(this.baseDir, options.rootDir != undefined ? options.rootDir : "src")
 		this.outDir = resolvePath(this.baseDir, options.outDir != undefined ? options.outDir : "dist")
 
+		this.fs = options.fs || new FileSystem()
+
 		this.matcher = this.createMatcher(options.match || "**/*", options.exclude != undefined ? options.exclude : ["**/node_modules/**"])
 		// 如果源目录包含生成目录，自动排除生成目录
-		if (containsPath(this.rootDir, this.outDir)) {
+		if (containsPath(this.rootDir, this.outDir, this.fs.isCaseInsensitive) && !pathEquals(this.outDir, this.rootDir), this.fs.isCaseInsensitive) {
 			this.matcher.exclude(this.outDir)
 		}
 		this.filter = options.filter != undefined ? this.createMatcher(options.filter) : undefined
@@ -71,9 +73,7 @@ export class Builder extends EventEmitter {
 		this.noPathCheck = !!options.noPathCheck
 		this.noWrite = options.noWrite !== undefined ? options.noWrite : !!options.devServer && !options.watch
 
-		this.fs = options.fs || new FileSystem()
-
-		this.clean = options.clean !== false && !this.noWrite && !this.filter && !containsPath(this.outDir, this.rootDir)
+		this.clean = options.clean !== false && !this.noWrite && !this.filter && !containsPath(this.outDir, this.rootDir, this.fs.isCaseInsensitive)
 		this.sourceMap = options.sourceMap !== undefined ? !!options.sourceMap : !options.optimize
 		const sourceMapOptions = options.sourceMap
 		this.sourceMapOptions = sourceMapOptions == undefined || typeof sourceMapOptions === "boolean" ? { includeFile: true, includeNames: true } : {
@@ -90,7 +90,7 @@ export class Builder extends EventEmitter {
 		}
 		this.bail = !!options.bail
 		this.logger = options.logger instanceof Logger ? options.logger : new Logger(options.logger)
-		this.mimeTypes = Object.assign(Object.setPrototypeOf(JSON.parse(readFileSync(`${__dirname}/../server/data/mimeTypes.json`, "utf-8")), null), options.mimeTypes)
+		this.mimeTypes = options.mimeTypes
 		this.reporter = options.reporter === undefined || typeof options.reporter === "string" ? require(`../reporters/${options.reporter || "summary"}`).default : options.reporter
 
 		this.packageManager = new PackageManager(options.installDependency, options.installDevDependency, this.logger)
@@ -130,7 +130,7 @@ export class Builder extends EventEmitter {
 			const browserBundlers = JSON.parse(readFileSync(`${__dirname}/../configs/bundlers.json`, "utf-8"))
 			for (const key in browserBundlers) {
 				if (!this.bundlers[key]) {
-					this.bundlers[key] = this.bundlers[browserBundlers[key]] || new (require(resolvePath(__dirname, browserBundlers[key])).default)(bundlerOptions, this)
+					this.bundlers[key] = new (require(resolvePath(__dirname, browserBundlers[key].replace(/^tpack\//, `../`))).default)(bundlerOptions, this)
 				}
 			}
 		}
@@ -183,7 +183,7 @@ export class Builder extends EventEmitter {
 	 * @param baseDir 基路径
 	 */
 	formatPath(outPath: string, module: Module, baseDir = this.rootDir) {
-		return outPath.replace(/<(\w+)(?::(\d+))?>/g, (source, key, argument) => {
+		return outPath.replace(/<(\w+)(?::([^>\s]*))?>/g, (source, key, argument) => {
 			switch (key) {
 				case "path":
 					return relativePath(baseDir, module.path)
@@ -194,15 +194,15 @@ export class Builder extends EventEmitter {
 				case "ext":
 					return module.ext
 				case "hash":
-					return module.hash.slice(0, +argument || 8)
+					return module.hash.slice(0, argument == undefined ? 8 : +argument || 0)
 				case "md5":
-					return module.md5.slice(0, +argument || 8)
+					return module.md5.slice(0, argument == undefined ? 8 : +argument || 0)
 				case "sha1":
-					return module.sha1.slice(0, +argument || 8)
+					return module.sha1.slice(0, argument == undefined ? 8 : +argument || 0)
 				case "random":
-					return randomString(+argument || 8)
+					return randomString(argument == undefined ? 8 : +argument || 0)
 				case "date":
-					return argument ? new Date().toLocaleString() : formatDate(new Date(), argument)
+					return argument == undefined ? new Date().toLocaleString() : formatDate(new Date(), argument)
 				case "version":
 					return this.version
 				default:
@@ -289,7 +289,7 @@ export class Builder extends EventEmitter {
 	get isBuilding() { return !!this.context }
 
 	/** 确保所有模块都已完成后继续 */
-	private readonly deferred = new Deferred()
+	private deferred = new Deferred()
 
 	/**
 	 * 构建整个项目
@@ -307,8 +307,9 @@ export class Builder extends EventEmitter {
 		const context = this.context = new BuildContext(fullBuild)
 		try {
 			// 准备开始
-			this.logger.progressPercent(context.progress)
+			this.logger.progressPercent = context.progress
 			await this.emit("buildStart", context)
+			console.assert(this.deferred.rejectCount === 0)
 			// 扫描所有入口模块
 			const entryModules = context.entryModules
 			const filter = this.filter
@@ -386,10 +387,10 @@ export class Builder extends EventEmitter {
 				return lengthOffset ? lengthOffset > 0 : x.originalPath <= y.originalPath
 			}
 
-			// 任务数 = 收集任务 + 所有模块的编译任务 + 打包任务 + 所有模块的生成任务
-			context.totalTaskCount = entryModules.length * 2 + 2
+			// 任务数 = 收集任务 + 所有模块的编译任务 * 2 + 打包任务 + 所有模块的生成任务 * 2
+			context.totalTaskCount = entryModules.length * 4 + 2
 			context.doneTaskCount = 1
-			this.logger.progressPercent(context.progress)
+			this.logger.progressPercent = context.progress
 			// 加载（编译、解析）入口模块及其依赖
 			const loadingTask = this.logger.begin(i18n`Loading modules`)
 			try {
@@ -397,25 +398,23 @@ export class Builder extends EventEmitter {
 				// 理论上，加载一个模块，需要等待其依赖和依赖的依赖都加载完成
 				// 但如果存在循环依赖（一般项目都会存在），就会导致互相等待，程序死锁
 				// 为解决这个问题并简化复杂度，改用全局计数器的策略，模块不互相等待，当所有模块都加载完成再继续后续流程
-				let firstError: any
 				for (const module of entryModules) {
 					this.loadModule(module).then(() => {
 						context.doneTaskCount++
-						this.logger.progressPercent(context.progress)
+						this.logger.progressPercent = context.progress
+						// console.log('进度', context.progress, this.relativePath(module.path))
 					}, e => {
-						if (firstError === undefined) {
-							firstError = e
-						}
+						this.deferred = new Deferred()
+						throw e
 					})
 					// 为避免进程阻塞程序，每处理完一个模块中断一次
 					if (!this.compiler.workerPool) {
 						await new Promise(resolve => setImmediate(resolve))
 					}
+					context.doneTaskCount++
+					this.logger.progressPercent = context.progress
 				}
 				await this.deferred
-				if (firstError !== undefined) {
-					throw firstError
-				}
 				await this.emit("loadEnd", context)
 			} finally {
 				this.logger.end(loadingTask)
@@ -430,7 +429,7 @@ export class Builder extends EventEmitter {
 					}
 				}
 				context.doneTaskCount++
-				this.logger.progressPercent(context.progress)
+				this.logger.progressPercent = context.progress
 			} finally {
 				this.logger.end(bundlingTask)
 			}
@@ -438,26 +437,25 @@ export class Builder extends EventEmitter {
 			const emittingTask = this.logger.begin(i18n`Emitting modules`)
 			try {
 				await this.emit("emitStart", context)
-				let firstError: any
 				for (const module of entryModules) {
 					if (module.noWrite) {
 						context.doneTaskCount++
-						this.logger.progressPercent(context.progress)
-						continue
+						this.logger.progressPercent = context.progress
+						// console.log('进度', context.progress, this.relativePath(module.path))
+					} else {
+						(module.promise || (module.promise = this.emitModule(module))).then(() => {
+							context.doneTaskCount++
+							this.logger.progressPercent = context.progress
+							// console.log('进度', context.progress, this.relativePath(module.path))
+						}, e => {
+							this.deferred = new Deferred()
+							throw e
+						})
 					}
-					(module.promise || (module.promise = this.emitModule(module))).then(() => {
-						context.doneTaskCount++
-						this.logger.progressPercent(context.progress)
-					}, e => {
-						if (firstError === undefined) {
-							firstError = e
-						}
-					})
+					context.doneTaskCount++
+					this.logger.progressPercent = context.progress
 				}
 				await this.deferred
-				if (firstError !== undefined) {
-					throw firstError
-				}
 				await this.emit("emitEnd", context)
 			} finally {
 				this.logger.end(emittingTask)
@@ -528,10 +526,11 @@ export class Builder extends EventEmitter {
 		try {
 			// 编译模块
 			await this.compiler.process(module)
+			if (module.type === undefined) module.type = this.getMimeType(module.path)
 			// 绑定打包器
 			let bundler = module.bundler
 			if (bundler === undefined) {
-				module.bundler = bundler = this.bundlers[module.ext.toLowerCase()]
+				module.bundler = bundler = this.bundlers[module.type]
 			}
 			// 解析模块
 			if (bundler) {
@@ -565,33 +564,36 @@ export class Builder extends EventEmitter {
 						if (!bundler || dependency.url == undefined) {
 							continue
 						}
-						const path = await bundler.resolve(dependency, module, this)
-						if (path) {
-							dependency.path = path
-						} else {
-							if (path === null) {
-								const log = {
-									source: bundler.constructor.name,
-									message: dependency.type === ModuleDependencyType.staticImport || dependency.type === ModuleDependencyType.dynamicImport ? i18n`Cannot find module '${dependency.url}'` : i18n`Cannot find file '${this.logger.formatPath(module.resolvePath(dependency.url))}'`,
-									index: dependency.index,
-									endIndex: dependency.endIndex,
-									detail: dependency.detail,
-								} as ModuleLogEntry
-								if (dependency.type === ModuleDependencyType.reference) {
-									module.addWarning(log)
-								} else {
-									module.addError(log)
+						module.processorName = bundler.constructor.name
+						try {
+							const path = await bundler.resolve(dependency, module, this)
+							if (path) {
+								dependency.path = path
+							} else {
+								if (path === null) {
+									const log = {
+										message: dependency.type === ModuleDependencyType.staticImport || dependency.type === ModuleDependencyType.dynamicImport ? i18n`Cannot find module '${dependency.url}'` : i18n`Cannot find reference '${this.logger.formatPath(module.resolvePath(dependency.url))}'`,
+										index: dependency.index,
+										endIndex: dependency.endIndex,
+										detail: dependency.detail,
+									} as ModuleLogEntry
+									if (dependency.type === ModuleDependencyType.reference) {
+										module.addWarning(log)
+									} else {
+										module.addError(log)
+									}
+									await this.emit("dependencyNotFound", dependency, module)
 								}
-								await this.emit("dependencyNotFound", dependency, module)
+								continue
 							}
-							continue
+						} finally {
+							module.processorName = undefined
 						}
 					}
 					this.loadModule(dependency.module = this.getModule(dependency.path))
 				}
 			}
 			// 加载完成
-			if (module.type === undefined) module.type = this.getMimeType(module.path)
 			module.state = ModuleState.loaded
 			// 添加监听
 			if (this.watcher) {
@@ -636,7 +638,7 @@ export class Builder extends EventEmitter {
 	}
 
 	/** 获取所有自定义扩展名（含点）到 MIME 类型的映射表 */
-	readonly mimeTypes: { [ext: string]: string }
+	readonly mimeTypes?: { [ext: string]: string }
 
 	/**
 	 * 获取指定模块名对应的 MIME 类型
@@ -687,7 +689,7 @@ export class Builder extends EventEmitter {
 		 * 获取源映射保存路径的回调函数
 		 * @param module 所属的模块
 		 * @param builder 当前构建器的对象
-		*/
+		 */
 		readonly outPath?: (module: Module, builder: Builder) => string
 		/** 源映射中所有源文件的根地址 */
 		readonly sourceRoot?: string
@@ -750,7 +752,7 @@ export class Builder extends EventEmitter {
 					if (!dependencyModule) {
 						continue
 					}
-					if (!dependency.inline && dependency.type === ModuleDependencyType.staticImport && dependencyModule.type !== module.type) {
+					if (!dependency.inline && dependency.type === ModuleDependencyType.staticImport && dependencyModule.bundler !== module.bundler) {
 						dependency.inline = true
 					}
 					if (!dependency.inline && (dependency.type === ModuleDependencyType.staticImport || dependency.type === ModuleDependencyType.external || dependency.type === ModuleDependencyType.externalList)) {
@@ -773,8 +775,9 @@ export class Builder extends EventEmitter {
 					if (!dependency.inline && (dependency.type === ModuleDependencyType.staticImport || dependency.type === ModuleDependencyType.external || dependency.type === ModuleDependencyType.externalList)) {
 						continue
 					}
+					// 如果需要内联模块，强制读取模块内容
 					const dependencyModule = dependency.module!
-					if (dependencyModule.promise && !dependency.circular) {
+					if (dependencyModule && dependencyModule.promise && !dependency.circular) {
 						await dependencyModule.promise
 						const generatedModule = dependencyModule.generatedModules![0]
 						// 自动内联不生成最终模块的依赖
@@ -785,6 +788,9 @@ export class Builder extends EventEmitter {
 						if (dependency.inline && generatedModule.bufferOrContent === undefined) {
 							await this.readModule(generatedModule as Module, false, i18n`Inline`)
 						}
+					}
+					if (dependency.inline && dependencyModule && dependencyModule.bufferOrContent === undefined) {
+						await this.readModule(dependencyModule, false, i18n`Inline`)
 					}
 				}
 			}

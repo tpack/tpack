@@ -360,19 +360,20 @@ export class Module {
 						}
 					}
 					// 如果当前模块存在父模块，则计算为父模块的位置
-					if (this.originalLine != undefined && log.fileName === this.originalPath) {
+					if (this.parentLine != undefined && log.fileName === this.originalPath) {
+						log.fileName = this.originalPath.replace(/\|[^\|]*$/, "")
 						if (log.line) {
-							log.line += this.originalLine
+							log.line += this.parentLine
 						} else if (log.column != undefined) {
-							log.line = this.originalLine
-							log.column += this.originalColumn!
+							log.line = this.parentLine
+							log.column += this.parentColumn!
 						}
 						if (log.endLine != undefined) {
 							if (log.endLine) {
-								log.endLine += this.originalLine
+								log.endLine += this.parentLine
 							} else if (log.endColumn != undefined) {
-								log.endLine = this.originalLine
-								log.endColumn += this.originalColumn!
+								log.endLine = this.parentLine
+								log.endColumn += this.parentColumn!
 							}
 						}
 					}
@@ -563,18 +564,19 @@ export class Module {
 	// #region 子模块
 
 	/** 如果当前模块是其它模块的一部分，则获取当前模块在所在模块的行号 */
-	originalLine?: number
+	parentLine?: number
 
 	/** 如果当前模块是其它模块的一部分，则获取当前模块在所在模块的列号 */
-	originalColumn?: number
+	parentColumn?: number
 
 	/**
 	 * 由当前模块截取其中一部分创建新的子模块
-	 * @param name 子模块的文件名
+	 * @param name 子模块的文件名，文件名不能包含 `|`
 	 * @param data 子模块的原始路据
 	 * @param index 子模块在当前模块数据的索引（从 0 开始）
 	 */
 	createSubmodule(name: string, data = this.bufferOrContent, index?: number) {
+		console.assert(!name.includes("|"), "Name of submodule cannot contain '|'")
 		let path = this.originalPath
 		let loc: LineColumn | undefined
 		if (index != undefined && this.content != undefined) {
@@ -589,20 +591,20 @@ export class Module {
 				}
 			}
 			// 如果当前文件本身是其它文件的一部分，叠加偏移
-			if (this.originalLine != undefined && path === this.originalPath) {
+			if (this.parentLine != undefined && path === this.originalPath) {
+				path = path.replace(/\|[^\|]*$/, "")
 				if (loc.line) {
-					loc.line += this.originalLine
+					loc.line += this.parentLine
 				} else {
-					loc.line = this.originalLine
-					loc.column += this.originalColumn!
+					loc.line = this.parentLine
+					loc.column += this.parentColumn!
 				}
 			}
 		}
-		const module = new Module(path, false)
-		module.path += `|${name}`
+		const module = new Module(`${path}|${name}`, false)
 		if (loc) {
-			module.originalLine = loc.line
-			module.originalColumn = loc.column
+			module.parentLine = loc.line
+			module.parentColumn = loc.column
 		}
 		module.data = data
 		return module

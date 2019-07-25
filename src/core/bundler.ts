@@ -1,5 +1,5 @@
 import { Builder } from "./builder"
-import { GeneratedModule, Module, ModuleDependency } from "./module"
+import { Module, ModuleDependency } from "./module"
 
 /** 表示一个模块打包器 */
 export interface Bundler {
@@ -23,7 +23,7 @@ export interface Bundler {
 	 * @param builder 当前的构建器对象
 	 * @returns 返回解析的绝对路径，如果希望忽略此依赖，则返回 `false`
 	 */
-	resolve(dependency: ModuleDependency, module: Module, builder: Builder): string | false | null | Promise<string | false | null>
+	resolve(dependency: ModuleDependency, module: Module, builder: Builder): string | false | null | void | Promise<string | false | null | void>
 	/**
 	 * 计算模块的打包结果
 	 * @param entryModules 所有入口模块
@@ -36,7 +36,7 @@ export interface Bundler {
 	 * @param generatedModule 合成的目标模块
 	 * @param builder 当前的构建器对象
 	 */
-	generate(module: Module, generatedModule: GeneratedModule, builder: Builder): void | Promise<void>
+	generate(module: Module, generatedModule: Module, builder: Builder): void | Promise<void>
 	/**
 	 * 将模块序列化成对象以便持久缓存
 	 * @param module 要序列化的模块

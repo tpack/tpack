@@ -149,3 +149,13 @@ export function addLineColumn(location: LineColumn, line: number, column: number
 	}
 	return { line: location.line, column: location.column + column }
 }
+
+/**
+ * 比较确定两个行列号的顺序
+ * @param x 要比较的第一个行列号
+ * @param y 要比较的第二个行列号
+ * @returns 如果两个行列号相同则返回 0，如果前者靠前，则返回负数，如果后者靠前，则返回正数
+ */
+export function compareLineColumn(x: LineColumn, y: LineColumn) {
+	return (x.line - y.line) || (x.column - y.column)
+}

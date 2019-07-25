@@ -1,11 +1,11 @@
-import { Bundler as IBundler } from "../core/bundler"
 import { Builder } from "../core/builder"
-import { Module, ModuleDependency, ModuleState } from "../core/module"
-import { unquoteCSSString, decodeCSS, quoteCSSString } from "../utils/css"
-import { Bundler } from "./common"
+import { Bundler as IBundler } from "../core/bundler"
+import { decodeCSS, quoteCSSString } from "../utils/css"
+import { TextDocument } from "../utils/textDocument"
+import { BundlerOptions, TextBundler, TextModule } from "./common"
 
 /** 表示一个 CSS 模块打包器 */
-export default class CSSBundler extends Bundler implements IBundler {
+export default class CSSBundler extends TextBundler implements IBundler {
 
 	/**
 	 * 初始化新的打包器
@@ -19,37 +19,37 @@ export default class CSSBundler extends Bundler implements IBundler {
 		this.url = cssOptions.url !== false
 	}
 
-	///**
-	// * 解析指定的模块
-	// * @param module 要解析的模块
-	// * @param builder 当前的构建器对象
-	// */
-	//protected parse(module: Module, builder: Builder) {
-	//	const module = new CSSModule(module, builder)
-	//	module.content.replace(/\/\*(.*?)(?:\*\/|$)|((?:@import\s+url|\burl)\s*\(\s*)("((?:[^\\"\n\r]|\\.)*)"|'((?:[^\\'\n\r]|\\.)*)'|[^\)\n\r]*)\s*\)\s*(?:;\s*(?:\r\n?|\n)?)?/gs, (source, comment: string | undefined, urlPrefix: string | undefined, urlString1: string | undefined, urlString2: string | undefined, urlString3: string | undefined, sourceIndex: number) => {
-	//		// /* ... */
-	//		if (comment != undefined) {
-	//			return ""
-	//		}
-	//		// @import url(...);, url(...)
-	//		if (urlPrefix != undefined) {
-	//			// 提取引号内的内容。
-	//			const urlString = urlString2 !== undefined ? urlString2 : urlString3 !== undefined ? urlString3 : urlString1!
-	//			const urlIndex = sourceIndex + urlPrefix.length
-	//			const url = decodeCSS(urlString)
-	//			if (urlPrefix.charCodeAt(0) === 64 /*@*/) {
-	//				// @import url(...);
-	//				this.parseImport(source, sourceIndex, url, urlIndex, urlIndex + urlString1!.length, urlString1!, module)
-	//			} else {
-	//				// url(...)
-	//				this.parseURLCall(url, urlIndex, urlIndex + urlString1!.length, urlString1!, module)
-	//			}
-	//			return ""
-	//		}
-	//		return ""
-	//	})
-	//	return module
-	//}
+	/**
+	 * 解析指定的文本模块
+	 * @param document 要解析的文档
+	 * @param module 要解析的模块
+	 * @param builder 当前的构建器对象
+	 */
+	protected parseDocument(document: TextDocument, module: TextModule, builder: Builder) {
+		document.content.replace(/\/\*(.*?)(?:\*\/|$)|((?:@import\s+url|\burl)\s*\(\s*)("((?:[^\\"\n\r]|\\.)*)"|'((?:[^\\'\n\r]|\\.)*)'|[^\)\n\r]*)\s*\)\s*(?:;\s*(?:\r\n?|\n)?)?/gs, (source, comment: string | undefined, urlPrefix: string | undefined, urlString1: string | undefined, urlString2: string | undefined, urlString3: string | undefined, sourceIndex: number) => {
+			// /* ... */
+			if (comment != undefined) {
+				return ""
+			}
+			// @import url(...);, url(...)
+			if (urlPrefix != undefined) {
+				// 提取引号内的内容。
+				const quote = urlString2 !== undefined ? '"' : urlString3 !== undefined ? "'" : undefined
+				const urlString = urlString2 !== undefined ? urlString2 : urlString3 !== undefined ? urlString3 : urlString1!
+				const urlIndex = sourceIndex + urlPrefix.length
+				const url = decodeCSS(urlString)
+				if (urlPrefix.charCodeAt(0) === 64 /*@*/) {
+					// @import url(...);
+					this.parseImport(source, sourceIndex, url, urlIndex, urlIndex + urlString1!.length, quote, module)
+				} else {
+					// url(...)
+					this.parseURLCall(url, urlIndex, urlIndex + urlString1!.length, quote, module)
+				}
+				return ""
+			}
+			return ""
+		})
+	}
 
 	/**
 	 * 是否合并 `@import`
@@ -68,15 +68,20 @@ export default class CSSBundler extends Bundler implements IBundler {
 	 * @param quote 最终地址的引号
 	 * @param module 地址所在的模块
 	*/
-	parseImport(importSource: string, importSourceIndex: number, url: string, urlStartIndex: number, urlEndIndex: number, quote: string, module: Module) {
+	parseImport(importSource: string, importSourceIndex: number, url: string, startIndex: number, endIndex: number, quote: string | undefined, module: TextModule) {
 		if (!this.import) {
 			return
 		}
 		if (this.import === true) {
-			const dependency = module.addDependency(url, urlStartIndex, urlEndIndex, "import")
+			const dependency = module.addDependency({
+				url: url,
+				index: startIndex,
+				endIndex: endIndex,
+				source: "import"
+			})
 			return
 		}
-		this.parseURL(url, urlStartIndex, urlEndIndex, "import", module, content => quoteCSSString(content, quote))
+		this.parseURL(url, startIndex, endIndex, "import", module, content => quoteCSSString(content, quote))
 	}
 
 	/** 判断是否解析 `url()` */
@@ -90,7 +95,7 @@ export default class CSSBundler extends Bundler implements IBundler {
 	 * @param quote 最终地址的引号
 	 * @param module 地址所在的模块
      */
-	protected parseURLCall(url: string, startIndex: number, endIndex: number, quote: string, module: Module) {
+	protected parseURLCall(url: string, startIndex: number, endIndex: number, quote: string | undefined, module: TextModule) {
 		if (!this.url) {
 			return
 		}
@@ -117,9 +122,4 @@ export interface CSSBundlerOptions extends BundlerOptions {
 		 */
 		url?: boolean
 	}
-}
-
-/** 表示一个 CSS 模块 */
-export class CSSModule extends Module {
-
 }

@@ -1,17 +1,18 @@
-import { ESTree } from "cherow"
+import * as ESTree from "meriyah/src/estree"
 import { Builder } from "../core/builder"
 import { Bundler as IBundler } from "../core/bundler"
-import { Module, ModuleDependency, ModuleState } from "../core/module"
+import { Module, ModuleDependency, ModuleState, ModuleDependencyType } from "../core/module"
 import { Matcher, Pattern } from "../utils/matcher"
-import { Bundler, BundlerOptions } from "./common"
+import { TextBundler, BundlerOptions, TextModule } from "./common"
 import { write, readFileSync } from "fs";
 import { TextWriter, SourceMapTextWriter } from "../utils/textWriter";
 import { encodeJS, quoteJSString } from "../utils/js";
-import { CSSModule } from "./css";
 import { Resolver } from "../core/resolver";
+import { TextDocument } from "../utils/textDocument";
+import { encodeDataURI } from "../utils/base64";
 
 /** 表示一个 JavaScript 模块打包器 */
-export default class JSBundler extends Bundler implements IBundler {
+export default class JSBundler extends TextBundler implements IBundler {
 
 	// #region 选项
 
@@ -22,11 +23,6 @@ export default class JSBundler extends Bundler implements IBundler {
 	 */
 	constructor(options: JSBundlerOptions = {}, builder: Builder) {
 		super(options, builder)
-		// todo:  配置
-		// @ts-ignore
-		this.resolvers.moduleResolver = new Resolver()
-		// @ts-ignore
-		this.resolvers.builtinModules = JSON.parse(readFileSync(`${__dirname}/../configs/builtinModules.json`, "utf-8"))
 	}
 
 	// #endregion
@@ -37,67 +33,60 @@ export default class JSBundler extends Bundler implements IBundler {
 	readonly renderer = new JSModuleRenderer()
 
 	/**
-	 * 当被子类重写时负责解析指定文件对应的模块
-	 * @param file 要解析的文件
+	 * 解析指定的文本模块
+	 * @param document 要解析的文档
+	 * @param module 要解析的模块
+	 * @param builder 当前的构建器对象
 	 */
-	protected async parseModule(file: VFile, builder: Builder) {
-		const module = new JSModule(file, builder)
-		const esParser = (await builder.require("cherow")) as typeof import("cherow")
-		const ast = esParser.parse(module.content, {
-			tolerant: true,
-			skipShebang: true,
+	protected async parseDocument(document: TextDocument, module: TextModule, builder: Builder) {
+		const esParser = (await builder.require("meriyah")) as typeof import("meriyah")
+		const ast = esParser.parse(document.content, {
+			// tolerant: true,
+			// skipShebang: true,
 			jsx: true,
 			next: true,
 			globalReturn: true,
 			module: true,
 			ranges: true,
-			experimental: true
+			// experimental: true
 		})
 		this.renderer.render(module, ast)
-
-		return module
 	}
 
 	/**
-	 * 生成指定的文件
-	 * @param file 要生成的文件
+	 * 合成指定的模块
+	 * @param module 要合成的模块
+	 * @param generatedModule 合成的目标模块
 	 * @param builder 当前的构建器对象
 	 */
-	async generate(file: VFile, builder: Builder) {
-		const module = file.getProp(Module) as Module
-		if (!module) {
-			return await super.generate(file, builder)
-		}
-		const bundle = new Bundle(module.id, module)
+	generate(module: TextModule, generatedModule: Module, builder: Builder) {
+		debugger
+		const bundle = new Bundle(builder.relativePath(module.path), module)
 		addDep(module, bundle)
 
 		function addDep(module: Module, bundle: Bundle) {
-			for (const dependency of module.dependecies) {
-				if (dependency.resolvedFile) {
-					const module = dependency.resolvedFile.getProp(Module) as Module
-					if (bundle.has(module)) {
-						continue
+			if (module.dependencies) {
+				for (const dependency of module.dependencies) {
+					if (dependency.module && dependency.type === ModuleDependencyType.staticImport) {
+						if (bundle.has(dependency.module)) {
+							continue
+						}
+						addDep(dependency.module, bundle)
 					}
-					addDep(module, bundle)
 				}
 			}
 			bundle.add(module)
 		}
-		// const bundle = file.getProp(Bundle) as Bundle
-		// if (bundle) {
-		if (file.sourceMap) {
+		if (module.sourceMap) {
 			const writer = new SourceMapTextWriter()
-			this.writeBundle(bundle, writer, file, builder)
-			file.content = writer.content
-			file.sourceMapBuilder = writer.sourceMapBuilder
+			this.writeBundle(bundle, writer, generatedModule, builder)
+			generatedModule.content = writer.content
+			generatedModule.sourceMapBuilder = writer.sourceMapBuilder
 		} else {
 			const writer = new TextWriter()
-			this.writeBundle(bundle, writer, file, builder)
-			file.content = writer.content
+			this.writeBundle(bundle, writer, generatedModule, builder)
+			generatedModule.content = writer.content
 		}
-		// 	return
-		// }
-		// return await super.generate(file, builder)
 	}
 
 	loader = `var tpack = tpack || {
@@ -157,27 +146,34 @@ export default class JSBundler extends Bundler implements IBundler {
 	}
 };`
 
-	protected writeBundle(bundle: Bundle, writer: TextWriter, file: VFile, builder: Builder) {
+	protected writeBundle(bundle: Bundle, writer: TextWriter, generatedModule: Module, builder: Builder) {
 		writer.write(this.loader)
-		for (const module of bundle) {
-			writer.write(`\n\ntpack.define(${quoteJSString(module.id)}, function (require, exports, module) {\n`)
+		for (const dependencyModule of bundle) {
+			writer.write(`\n\ntpack.define(${quoteJSString(builder.relativePath(dependencyModule.path))}, function (require, exports, module) {\n`)
 			writer.indent()
 			// todo:  用  JSModule  类型标识？
-			if (module instanceof JSModule) {
-				module.write(writer)
+			switch (dependencyModule.type) {
+				case "text/javascript":
+					if ((dependencyModule as TextModule).document) {
+						(dependencyModule as TextModule).document.write(writer)
+					} else {
+						writer.write(dependencyModule.content, 0, dependencyModule.content.length, dependencyModule.originalPath, 0, 0, undefined, dependencyModule.sourceMapData!)
+					}
+					break
+				case "text/css":
+					writer.write(`module.exports = tpack.style(${quoteJSString(dependencyModule.content)});`);
+					break
+				case "application/json":
+					writer.write(`module.exports = ${dependencyModule.content};`);
+					break
+				default:
+					if (dependencyModule.type!.startsWith("text/")) {
+						writer.write(`module.exports = ${quoteJSString(dependencyModule.content)};`)
+					} else {
+						writer.write(`module.exports = ${quoteJSString(encodeDataURI(dependencyModule.type!, dependencyModule.bufferOrContent))};`)
+					}
+					break
 			}
-			else if (module instanceof CSSModule) {
-				writer.write(`module.exports = tpack.style(${quoteJSString(module.toString(file, builder))});`);
-			}
-			// else if (module.type === "text") {
-			// 	writer.write(`module.exports = ${JSON.stringify(module.getContent(savePath))};`);
-			// }
-			// else if (module.type === "json") {
-			// 	writer.write(`module.exports = ${module.getContent(savePath)};`);
-			// }
-			// else if (module.type !== "extractCss") {
-			// 	writer.write(`module.exports = ${JSON.stringify(module.getContent(savePath))};`);
-			// }
 			writer.unindent();
 			writer.write(`\n});`);
 		}
@@ -624,7 +620,7 @@ export interface ResolvedExtractCSSModuleRule {
 }
 
 /** 表示一个 JS 模块 */
-export class JSModule extends Module {
+export interface JSModule extends TextModule {
 
 	// 	/** 模块中用到的外部变量（如 "$"） */
 	// 	readonly externals: string[] = []
@@ -721,7 +717,7 @@ export class JSModuleRenderer {
 		this.globalDefines.set(name, value)
 	}
 
-	/** 
+	/**
 	 * 获取指定节点编译后的常量
 	 * @param node 要查询的名称
 	 */
@@ -729,7 +725,7 @@ export class JSModuleRenderer {
 
 	}
 
-	/** 
+	/**
 	 * 获取指定节点编译后的常量
 	 * @param node 要查询的名称
 	 */
@@ -1088,8 +1084,14 @@ export class JSModuleRenderer {
 	 */
 	protected Identifier(node: ESTree.Identifier) {
 		if (node.name === "process" && !this.hasBinding(node.name)) {
-			const dep = this.module.addDependency("process", node.start!, node.end!, "process")
-			this.module.insert(0, () => {
+			const dep = this.module.addDependency({
+				type: ModuleDependencyType.staticImport,
+				url: "process",
+				index: node.start!,
+				endIndex: node.end!,
+				source: "process"
+			})
+			this.module.document.insert(0, () => {
 				const resolvedFile = dep.resolvedFile
 				if (resolvedFile) {
 					const module = resolvedFile.getProp(Module) as Module
@@ -1331,7 +1333,7 @@ export class JSModuleRenderer {
 			// false && <expr> -> false
 			// true || <expr> -> true
 			if (node.operator === "&&" && !leftOperand || node.operator === "||" && leftOperand) {
-				this.module.remove(node.left.end!, node.right.end!)
+				this.module.document.remove(node.left.end!, node.right.end!)
 				return leftOperand
 			}
 		}

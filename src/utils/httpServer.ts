@@ -510,8 +510,8 @@ export class HTTPResponse extends ServerResponse {
 
 export interface HTTPServer extends Http2SecureServer { }
 export interface HTTPServerOptions extends ServerOptions, SecureServerOptions { }
-export interface HTTPRequest extends Pick<Http2ServerRequest, Exclude<keyof Http2ServerRequest, keyof IncomingMessage>> { }
-export interface HTTPResponse extends Pick<Http2ServerResponse, Exclude<keyof Http2ServerResponse, keyof ServerResponse>> { }
+export interface HTTPRequest extends Omit<Http2ServerRequest, keyof IncomingMessage> { }
+export interface HTTPResponse extends Omit<Http2ServerResponse, keyof ServerResponse> { }
 
 /** 解析多个值组成的 HTTP 头 */
 function parseMultiValueHeader(value: string | undefined) {
